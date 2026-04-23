@@ -26,21 +26,27 @@ Example:
 
 `2026-04-23 19:15:59 CL6-ZG (Pure Blind) Microplastic of Pure Blind [INIT][ASTRA][FINAL] (5292)`
 
-## Installation
+## Installation (Docker - Recommended)
 
 ### Prerequisites
 
-- Alliance Auth running (supported by `allianceauth>=4.6.1,<6`)
+- Alliance Auth running in Docker (`allianceauth>=4.6.1,<6`)
 - `aa-structuretimers` installed and migrated
-- `aadiscordbot` installed and configured in your Auth stack
+- `aadiscordbot` installed and configured
 
-1) Install package in your Alliance Auth virtualenv:
+### 1) Add plugin to your requirements file
 
-```bash
-pip install aa-discordtimerboard
+Add this project to the requirements file your Alliance Auth Docker image installs:
+
+```text
+aa-discordtimerboard
 ```
 
-2) Add app to `INSTALLED_APPS`:
+If you pin plugin versions, pin it there as well.
+
+Then rebuild/deploy the image so the container installs the updated requirements.
+
+### 2) Enable app in `local.py`
 
 ```python
 INSTALLED_APPS += [
@@ -48,19 +54,7 @@ INSTALLED_APPS += [
 ]
 ```
 
-3) Configure channels in Django admin.
-
-Run migrations:
-
-```bash
-python manage.py migrate
-```
-
-Then add one or more `Discord Timerboard Config` rows in Django admin.
-
-Add one or more rows with timerboard and command channel IDs.
-
-4) (Optional) Tune refresh behavior:
+Optional tuning:
 
 ```python
 DISCORDTIMERBOARD_UPDATE_INTERVAL = 5
@@ -69,74 +63,49 @@ DISCORDTIMERBOARD_PAST_GRACE_MINUTES = 240
 
 Notes:
 - Default update interval is `5` seconds (minimum `3` seconds).
-- The bot only redraws timerboard messages when timer data changes, so fast polling remains API-friendly.
-- This is intended to surface newly reinforced structure timers almost immediately after they are written to `aa-structuretimers`.
+- Timerboard redraws only when timer data changes (plus minute header updates), so it stays low-latency without excessive Discord edits.
+- Reinforced timers should appear within a few seconds after they are written into `aa-structuretimers`.
 
-5) Restart services (web, worker, beat, aadiscordbot).
-
-6) Sync slash commands in Discord (if your bot requires manual sync/restart for command registration).
-
-## Docker Install (Alliance Auth)
-
-If your Alliance Auth runs in Docker, add this app to the same image build where you install other AA plugins.
-
-### 1) Install package in your Auth image
-
-In your Dockerfile (or plugin requirements file used by your Docker build), add:
-
-```bash
-pip install aa-discordtimerboard
-```
-
-If you use a pinned requirements file instead:
-
-```text
-aa-discordtimerboard
-```
-
-Then rebuild the image.
-
-### 2) Enable the app in settings
-
-In your `local.py` (mounted into the container), add:
-
-```python
-INSTALLED_APPS += [
-    "discordtimerboard",
-]
-```
-
-Then configure `Discord Timerboard Config` rows in Django admin.
-
-### 3) Run migrations inside the running web container
+### 3) Run migrations
 
 ```bash
 docker compose exec web python manage.py migrate
 ```
 
-(If your service is named differently, replace `web`.)
+(replace `web` with your service name if different)
 
-### 4) Restart relevant services
-
-After rebuild/deploy and migration, restart:
-
-- web
-- celery worker
-- celery beat
-- aadiscordbot
-
-Example:
+### 4) Restart services
 
 ```bash
 docker compose up -d --build
 docker compose restart worker beat aadiscordbot
 ```
 
-### 5) Verify
+### 5) Configure channels in Django admin
 
-- Check Django admin for `Discord Timerboard Config`.
-- Run `/refreshtimerboard` in your commands channel.
-- Confirm timerboard messages appear/update in the configured timerboard channel.
+Go to `/admin/` and add one or more `Discord Timerboard Config` rows:
+
+- `name`
+- `discord_server_id` (optional)
+- `timerboard_channel_id`
+- `commands_channel_id`
+- `enabled`
+
+### 6) Verify
+
+- Run `/refreshtimerboard` in your configured commands channel.
+- Confirm timerboard messages appear in the configured timerboard channel.
+
+## Installation (Bare Metal / venv)
+
+If you are not using Docker:
+
+```bash
+pip install aa-discordtimerboard
+python manage.py migrate
+```
+
+Then follow the same `INSTALLED_APPS`, admin config, and service restart steps above.
 
 ## Command Formats
 
