@@ -63,7 +63,27 @@ Optional tuning:
 ```python
 DISCORDTIMERBOARD_UPDATE_INTERVAL = 5
 DISCORDTIMERBOARD_PAST_GRACE_MINUTES = 240
+
+# REST API (disabled by default)
+DISCORDTIMERBOARD_API_ENABLED = True
+DISCORDTIMERBOARD_API_KEY = "your-secret-key"  # omit to disable auth
 ```
+
+If you enable the API, also add the URLs to your `myauth/myauth/urls.py`:
+
+```python
+from django.urls import include, path
+
+urlpatterns += [
+    path("discordtimerboard/", include("discordtimerboard.urls")),
+]
+```
+
+The API then exposes:
+- `GET /discordtimerboard/api/timers/`
+- `GET /discordtimerboard/timers/`
+
+Authenticate with `X-API-Key: <key>` or `Authorization: Bearer <key>` headers.
 
 Notes:
 - Default update interval is `5` seconds (minimum `3` seconds).

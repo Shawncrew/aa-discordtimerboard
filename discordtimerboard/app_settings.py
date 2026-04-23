@@ -21,6 +21,14 @@ DISCORDTIMERBOARD_PAST_GRACE_MINUTES = int(
     getattr(settings, "DISCORDTIMERBOARD_PAST_GRACE_MINUTES", 240)
 )
 
+DISCORDTIMERBOARD_API_ENABLED = bool(
+    getattr(settings, "DISCORDTIMERBOARD_API_ENABLED", False)
+)
+
+DISCORDTIMERBOARD_API_KEY = (
+    getattr(settings, "DISCORDTIMERBOARD_API_KEY", None) or ""
+).strip()
+
 
 def get_server_configs():
     """
