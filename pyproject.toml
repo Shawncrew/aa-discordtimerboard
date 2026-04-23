@@ -1,0 +1,33 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = [
+    "hatchling",
+]
+
+[project]
+name = "aa-discordtimerboard"
+description = "Alliance Auth extension to publish Structure Timers to Discord timerboard channels."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Shawn" },
+]
+dependencies = [
+    "allianceauth<6,>=4.6.1",
+    "aa-structuretimers>=2.0.0",
+]
+dynamic = [
+    "version",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/aa-discordtimerboard"
+Source = "https://github.com/your-org/aa-discordtimerboard"
+Tracker = "https://github.com/your-org/aa-discordtimerboard/issues"
+
+[tool.hatch.version]
+path = "discordtimerboard/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = [ "discordtimerboard" ]

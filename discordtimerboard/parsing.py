@@ -1,0 +1,144 @@
+import datetime as dt
+import re
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+
+from django.utils import timezone
+
+
+@dataclass
+class ParsedTimerInput:
+    timer_time: dt.datetime
+    system: str
+    structure_name: str
+    tags: List[str]
+
+
+def _make_aware_utc(value: dt.datetime) -> dt.datetime:
+    return timezone.make_aware(value, dt.timezone.utc)
+
+
+def _parse_structure_line(structure_line: str) -> Optional[Tuple[str, str]]:
+    line = structure_line.strip()
+
+    # SYSTEM - STRUCTURE
+    dash_match = re.match(r"^([A-Za-z0-9-]+)\s*-\s*(.+)$", line)
+    if dash_match:
+        return dash_match.group(1).strip(), dash_match.group(2).strip()
+
+    # Customs Office (DT-TCD IX)
+    customs_match = re.match(r"^Customs Office\s+\(([A-Za-z0-9-]+)\s+([IVX]+)\)", line, re.IGNORECASE)
+    if customs_match:
+        system = customs_match.group(1).strip()
+        planet = customs_match.group(2).strip()
+        return system, f"Customs Office Planet {planet}"
+
+    # Orbital Skyhook (MQ-NPY I)
+    skyhook_match = re.match(r"^Orbital Skyhook\s+\(([A-Za-z0-9-]+)\s+([IVX]+)\)", line, re.IGNORECASE)
+    if skyhook_match:
+        system = skyhook_match.group(1).strip()
+        planet = skyhook_match.group(2).strip()
+        return system, f"Orbital Skyhook Planet {planet}"
+
+    # Generic "<name> (SYSTEM IV)" fallback
+    generic_sys_match = re.search(r"\(([A-Za-z0-9-]+)\s+[IVX]+\)", line)
+    if generic_sys_match:
+        return generic_sys_match.group(1).strip(), line
+
+    return None
+
+
+def parse_add_input(input_text: str, now_utc: Optional[dt.datetime] = None) -> Optional[ParsedTimerInput]:
+    text = input_text.strip()
+
+    # Format 4: Merc Den <systemName> <planet...> <hours> <minutes> [TAG]
+    merc_den = re.match(
+        r"^Merc\s+Den\s+([A-Za-z0-9-]+)\s+(.+?)\s+(\d+)\s+(\d+)(?:\s+(\[[^\]]+\]))?\s*$",
+        text,
+        re.IGNORECASE,
+    )
+    if merc_den:
+        system = merc_den.group(1).strip()
+        planet = merc_den.group(2).strip()
+        hours = int(merc_den.group(3))
+        minutes = int(merc_den.group(4))
+        owner_tag = merc_den.group(5).strip("[]") if merc_den.group(5) else "NC"
+        base_now = now_utc or timezone.now()
+        if timezone.is_naive(base_now):
+            base_now = _make_aware_utc(base_now)
+        timer_time = base_now + dt.timedelta(hours=hours, minutes=minutes)
+        return ParsedTimerInput(
+            timer_time=timer_time,
+            system=system,
+            structure_name=f"Mercenary Den {planet}",
+            tags=[owner_tag, "MERCENARY DEN", "FINAL"],
+        )
+
+    # Format 1: direct timestamp line
+    direct = re.match(
+        r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+([A-Za-z0-9-]+)\s*-\s*(.+)$",
+        text,
+    )
+    if direct:
+        when = dt.datetime.strptime(direct.group(1), "%Y-%m-%d %H:%M:%S")
+        rest = direct.group(3).strip()
+        tags = re.findall(r"\[([^\]]+)\]", rest)
+        structure_name = re.sub(r"\s*(\[[^\]]+\])+\s*$", "", rest).strip()
+        return ParsedTimerInput(
+            timer_time=_make_aware_utc(when),
+            system=direct.group(2).strip(),
+            structure_name=structure_name,
+            tags=tags,
+        )
+
+    # Format 2/3 reinforced variants
+    lines = [x.strip() for x in text.splitlines() if x.strip()]
+    reinforced_line = next(
+        (x for x in lines if "Reinforced until" in x or "Anchoring until" in x),
+        None,
+    )
+    if reinforced_line:
+        time_match = re.search(
+            r"(?:Reinforced|Anchoring) until (\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2})",
+            reinforced_line,
+        )
+        if not time_match:
+            return None
+        when = dt.datetime.strptime(time_match.group(1), "%Y.%m.%d %H:%M:%S")
+        tags = re.findall(r"\[([^\]]+)\]", reinforced_line)
+
+        source_line = lines[0]
+        parsed = _parse_structure_line(source_line)
+        if not parsed:
+            return None
+        system, structure_name = parsed
+        return ParsedTimerInput(
+            timer_time=_make_aware_utc(when),
+            system=system,
+            structure_name=structure_name,
+            tags=tags,
+        )
+
+    # Single-line reinforced fallback
+    single = re.search(
+        r"^(.+?)\s+(?:Reinforced|Anchoring)\s+until\s+(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2})(?:\s+(.*))?$",
+        text,
+        re.IGNORECASE,
+    )
+    if single:
+        prefix = single.group(1).strip()
+        time_raw = single.group(2).strip()
+        tag_raw = single.group(3) or ""
+        parsed = _parse_structure_line(prefix)
+        if not parsed:
+            return None
+        when = dt.datetime.strptime(time_raw, "%Y.%m.%d %H:%M:%S")
+        tags = re.findall(r"\[([^\]]+)\]", tag_raw)
+        return ParsedTimerInput(
+            timer_time=_make_aware_utc(when),
+            system=parsed[0],
+            structure_name=parsed[1],
+            tags=tags,
+        )
+
+    return None
