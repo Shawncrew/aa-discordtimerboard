@@ -89,6 +89,68 @@ DISCORDTIMERBOARD_PAST_GRACE_MINUTES = 240
 
 6) Sync slash commands in Discord (if your bot requires manual sync/restart for command registration).
 
+## Docker Install (Alliance Auth)
+
+If your Alliance Auth runs in Docker, add this app to the same image build where you install other AA plugins.
+
+### 1) Install package in your Auth image
+
+In your Dockerfile (or plugin requirements file used by your Docker build), add:
+
+```bash
+pip install aa-discordtimerboard
+```
+
+If you use a pinned requirements file instead:
+
+```text
+aa-discordtimerboard
+```
+
+Then rebuild the image.
+
+### 2) Enable the app in settings
+
+In your `local.py` (mounted into the container), add:
+
+```python
+INSTALLED_APPS += [
+    "discordtimerboard",
+]
+```
+
+Also configure either DB-backed channel rows (recommended) or `DISCORDTIMERBOARD_SERVERS`.
+
+### 3) Run migrations inside the running web container
+
+```bash
+docker compose exec web python manage.py migrate
+```
+
+(If your service is named differently, replace `web`.)
+
+### 4) Restart relevant services
+
+After rebuild/deploy and migration, restart:
+
+- web
+- celery worker
+- celery beat
+- aadiscordbot
+
+Example:
+
+```bash
+docker compose up -d --build
+docker compose restart worker beat aadiscordbot
+```
+
+### 5) Verify
+
+- Check Django admin for `Discord Timerboard Config`.
+- Run `/refreshtimerboard` in your commands channel.
+- Confirm timerboard messages appear/update in the configured timerboard channel.
+
 ## Command Formats
 
 Supported `!add` formats:
