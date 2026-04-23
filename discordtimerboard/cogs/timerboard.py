@@ -192,6 +192,7 @@ class DiscordTimerBoard(commands.Cog):
                 "structure_type",
             )
             .filter(date__isnull=False, date__gte=cutoff)
+            .exclude(timer_type="MM")
             .order_by("date", "pk")
         )
 
