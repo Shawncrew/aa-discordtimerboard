@@ -212,6 +212,10 @@ class DiscordTimerBoard(commands.Cog):
             tags.append(f"[{timer_tag}]")
         return "".join(tags)
 
+    @staticmethod
+    def _dotlan_system_url(system_name: str) -> str:
+        return "https://evemaps.dotlan.net/system/" + system_name.replace(" ", "_")
+
     def _format_line(self, timer) -> str:
         date_str = timezone.localtime(timer.date).strftime("%Y-%m-%d %H:%M:%S")
         system = timer.eve_solar_system.name if timer.eve_solar_system_id else "Unknown"
@@ -224,7 +228,8 @@ class DiscordTimerBoard(commands.Cog):
         tags = self._format_tags(timer)
         region_part = f" ({region})" if region else ""
         tags_part = f" {tags}" if tags else ""
-        return f"{date_str} {system}{region_part} {structure}{tags_part} ({timer.pk})"
+        system_link = f"[{system}]({self._dotlan_system_url(system)})"
+        return f"{date_str} {system_link}{region_part} {structure}{tags_part} ({timer.pk})"
 
     # Discord's hard limit is 2000; leave headroom for safety.
     _DISCORD_MSG_MAX_LEN = 1900
