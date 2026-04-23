@@ -39,10 +39,14 @@ Example:
 Add this project to the requirements file your Alliance Auth Docker image installs:
 
 ```text
-aa-discordtimerboard
+git+https://github.com/Shawncrew/aa-discordtimerboard.git@master
 ```
 
-If you pin plugin versions, pin it there as well.
+Recommended for production: pin to a release tag instead of `master`, for example:
+
+```text
+git+https://github.com/Shawncrew/aa-discordtimerboard.git@v0.1.0
+```
 
 Then rebuild/deploy the image so the container installs the updated requirements.
 
