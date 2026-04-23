@@ -243,7 +243,7 @@ class DiscordTimerBoard(commands.Cog):
 
         eve_now = timezone.now().astimezone(dt.timezone.utc)
         header = f"Current Eve Time (UTC): {eve_now.strftime('%Y-%m-%d %H:%M')}"
-        content_lines = [header, ""] + (lines if lines else ["No active timers."])
+        content_lines = [header, "", ""] + (lines if lines else ["No active timers."])
 
         payloads = []
         current = ""
