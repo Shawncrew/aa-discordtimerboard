@@ -70,19 +70,31 @@ Notes:
 - Timerboard redraws only when timer data changes (plus minute header updates), so it stays low-latency without excessive Discord edits.
 - Reinforced timers should appear within a few seconds after they are written into `aa-structuretimers`.
 
-### 3) Run migrations
+### 3) Rebuild and restart containers
+
+Rebuild the images to pick up the new requirement, then restart the affected services:
 
 ```bash
-docker compose exec web python manage.py migrate
+docker compose up -d --build allianceauth_gunicorn allianceauth_discordbot allianceauth_worker_beat
+docker compose restart allianceauth_worker_pingbot allianceauth_worker_services
 ```
 
-(replace `web` with your service name if different)
-
-### 4) Restart services
+If you run multiple worker replicas (e.g. `aa-docker-allianceauth_worker-1` through `-5`), restart those too:
 
 ```bash
-docker compose up -d --build
-docker compose restart worker beat aadiscordbot
+docker compose up -d --scale allianceauth_worker=5
+```
+
+Or restart them individually:
+
+```bash
+docker compose restart allianceauth_worker
+```
+
+### 4) Run migrations
+
+```bash
+docker compose exec allianceauth_gunicorn python manage.py migrate
 ```
 
 ### 5) Configure channels in Django admin
