@@ -166,7 +166,7 @@ class DiscordTimerBoard(commands.Cog):
             eve_minute,
         )
 
-    async def update_all_timerboards(self, force: bool = False):
+    async def update_all_timerboards(self, force: bool = False, recreate: bool = False):
         current_state = self._query_timer_state()
         if not force and current_state == self._last_timer_state:
             return
@@ -178,7 +178,7 @@ class DiscordTimerBoard(commands.Cog):
             if channel is None:
                 logger.warning("Timerboard channel not found for id=%s", channel_id)
                 continue
-            await self._update_timerboard_channel(channel)
+            await self._update_timerboard_channel(channel, recreate=recreate)
         self._last_timer_state = current_state
 
     def _query_timers(self):
@@ -237,7 +237,7 @@ class DiscordTimerBoard(commands.Cog):
     # Safety cap on how many bot messages we track in a channel.
     _HISTORY_BOT_MSG_LIMIT = 200
 
-    async def _update_timerboard_channel(self, channel):
+    async def _update_timerboard_channel(self, channel, recreate: bool = False):
         timers = self._query_timers()
         lines = [self._format_line(t) for t in timers]
 
@@ -274,29 +274,44 @@ class DiscordTimerBoard(commands.Cog):
             return
         existing.reverse()
 
-        for idx, payload in enumerate(payloads):
-            if idx < len(existing):
+        if recreate:
+            for msg in existing:
                 try:
-                    await existing[idx].edit(content=payload)
+                    await msg.delete()
                 except discord.errors.NotFound:
-                    logger.warning("Message id=%s not found while editing; sending new", existing[idx].id)
-                    await channel.send(payload)
+                    pass
                 except discord.errors.Forbidden:
-                    logger.error("No permission to edit message id=%s in channel id=%s", existing[idx].id, channel.id)
-            else:
+                    logger.error("No permission to delete message id=%s in channel id=%s", msg.id, channel.id)
+                    return
+            for payload in payloads:
                 try:
                     await channel.send(payload)
                 except discord.errors.Forbidden:
                     logger.error("No permission to send messages in channel id=%s", channel.id)
                     return
-
-        for extra in existing[len(payloads):]:
-            try:
-                await extra.delete()
-            except discord.errors.NotFound:
-                pass  # Already gone, nothing to do.
-            except discord.errors.Forbidden:
-                logger.error("No permission to delete message id=%s in channel id=%s", extra.id, channel.id)
+        else:
+            for idx, payload in enumerate(payloads):
+                if idx < len(existing):
+                    try:
+                        await existing[idx].edit(content=payload)
+                    except discord.errors.NotFound:
+                        logger.warning("Message id=%s not found while editing; sending new", existing[idx].id)
+                        await channel.send(payload)
+                    except discord.errors.Forbidden:
+                        logger.error("No permission to edit message id=%s in channel id=%s", existing[idx].id, channel.id)
+                else:
+                    try:
+                        await channel.send(payload)
+                    except discord.errors.Forbidden:
+                        logger.error("No permission to send messages in channel id=%s", channel.id)
+                        return
+            for extra in existing[len(payloads):]:
+                try:
+                    await extra.delete()
+                except discord.errors.NotFound:
+                    pass
+                except discord.errors.Forbidden:
+                    logger.error("No permission to delete message id=%s in channel id=%s", extra.id, channel.id)
 
     async def _send_response(self, ctx_or_interaction, message: str, ephemeral: bool = False):
         if hasattr(ctx_or_interaction, "response"):
@@ -340,7 +355,7 @@ class DiscordTimerBoard(commands.Cog):
             await self._send_response(ctx, f"Refresh is on cooldown. Try again in {remaining}s.")
             return
         self._mark_refresh(ctx.channel.id)
-        await self.update_all_timerboards(force=True)
+        await self.update_all_timerboards(force=True, recreate=True)
         await self._send_response(ctx, "Timerboard refreshed.")
 
     @commands.slash_command(
@@ -356,7 +371,7 @@ class DiscordTimerBoard(commands.Cog):
             await self._send_response(ctx, f"Refresh is on cooldown. Try again in {remaining}s.", ephemeral=True)
             return
         self._mark_refresh(ctx.channel.id)
-        await self.update_all_timerboards(force=True)
+        await self.update_all_timerboards(force=True, recreate=True)
         await self._send_response(ctx, "Timerboard refreshed.", ephemeral=True)
 
 
