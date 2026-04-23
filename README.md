@@ -48,9 +48,7 @@ INSTALLED_APPS += [
 ]
 ```
 
-3) Configure channels (either DB-backed in admin, or static fallback in `local.py`).
-
-### Option A: DB-backed (recommended)
+3) Configure channels in Django admin.
 
 Run migrations:
 
@@ -62,25 +60,17 @@ Then add one or more `Discord Timerboard Config` rows in Django admin.
 
 Add one or more rows with timerboard and command channel IDs.
 
-### Option B: static settings fallback (single Discord server)
-
-```python
-DISCORDTIMERBOARD_SERVER = {
-    "timerboard": 123456789012345678,
-    "commands": 234567890123456789,
-    # Optional:
-    "guild_id": 345678901234567890,
-}
-```
-
-If you need multi-server support later, the legacy `DISCORDTIMERBOARD_SERVERS` map is still supported.
-
 4) (Optional) Tune refresh behavior:
 
 ```python
-DISCORDTIMERBOARD_UPDATE_INTERVAL = 60
+DISCORDTIMERBOARD_UPDATE_INTERVAL = 5
 DISCORDTIMERBOARD_PAST_GRACE_MINUTES = 240
 ```
+
+Notes:
+- Default update interval is `5` seconds (minimum `3` seconds).
+- The bot only redraws timerboard messages when timer data changes, so fast polling remains API-friendly.
+- This is intended to surface newly reinforced structure timers almost immediately after they are written to `aa-structuretimers`.
 
 5) Restart services (web, worker, beat, aadiscordbot).
 
@@ -116,7 +106,7 @@ INSTALLED_APPS += [
 ]
 ```
 
-Also configure either DB-backed channel rows (recommended) or `DISCORDTIMERBOARD_SERVER`.
+Then configure `Discord Timerboard Config` rows in Django admin.
 
 ### 3) Run migrations inside the running web container
 

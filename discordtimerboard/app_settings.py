@@ -12,20 +12,9 @@ DISCORDTIMERBOARD_DISCORD_BOT_COGS = getattr(
     ["discordtimerboard.cogs.timerboard"],
 )
 
-DISCORDTIMERBOARD_SERVERS = getattr(
-    settings,
-    "DISCORDTIMERBOARD_SERVERS",
-    {},
-)
-
-DISCORDTIMERBOARD_SERVER = getattr(
-    settings,
-    "DISCORDTIMERBOARD_SERVER",
-    {},
-)
-
-DISCORDTIMERBOARD_UPDATE_INTERVAL = int(
-    getattr(settings, "DISCORDTIMERBOARD_UPDATE_INTERVAL", 60)
+DISCORDTIMERBOARD_UPDATE_INTERVAL = max(
+    3,
+    int(getattr(settings, "DISCORDTIMERBOARD_UPDATE_INTERVAL", 5)),
 )
 
 DISCORDTIMERBOARD_PAST_GRACE_MINUTES = int(
@@ -37,10 +26,8 @@ def get_server_configs():
     """
     Return list of channel configs.
 
-    Preference order:
-    1) DB configs from DiscordTimerboardConfig (enabled rows)
-    2) Static fallback from DISCORDTIMERBOARD_SERVER setting
-       (or legacy DISCORDTIMERBOARD_SERVERS)
+    Config source:
+    - DB configs from DiscordTimerboardConfig (enabled rows)
     """
     try:
         DiscordTimerboardConfig = apps.get_model("discordtimerboard", "DiscordTimerboardConfig")
@@ -65,32 +52,4 @@ def get_server_configs():
     except (LookupError, OperationalError, ProgrammingError):
         # Table may not exist yet before initial migration.
         pass
-
-    # Preferred static config: single server block.
-    if isinstance(DISCORDTIMERBOARD_SERVER, dict):
-        timerboard = DISCORDTIMERBOARD_SERVER.get("timerboard")
-        commands = DISCORDTIMERBOARD_SERVER.get("commands")
-        if timerboard and commands:
-            return [
-                {
-                    "name": "default",
-                    "guild_id": DISCORDTIMERBOARD_SERVER.get("guild_id"),
-                    "timerboard": timerboard,
-                    "commands": commands,
-                }
-            ]
-
-    # Legacy static config: multi-server map.
-    configs = []
-    for name, cfg in DISCORDTIMERBOARD_SERVERS.items():
-        if not isinstance(cfg, dict):
-            continue
-        configs.append(
-            {
-                "name": str(name),
-                "guild_id": cfg.get("guild_id"),
-                "timerboard": cfg.get("timerboard"),
-                "commands": cfg.get("commands"),
-            }
-        )
-    return configs
+    return []

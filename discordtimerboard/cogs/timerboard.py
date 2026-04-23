@@ -13,6 +13,7 @@ except Exception:
 from discord.ext import commands, tasks
 
 from django.apps import apps
+from django.db.models import Count, Max
 from django.utils import timezone
 from eveuniverse.models import EveSolarSystem, EveType
 
@@ -95,6 +96,7 @@ MODEL_TIMER_TO_TAG = {
 class DiscordTimerBoard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._last_timer_state = None
         if not self.refresh_boards.is_running():
             self.refresh_boards.start()
 
@@ -137,7 +139,24 @@ class DiscordTimerBoard(commands.Cog):
     async def _before_refresh_boards(self):
         await self.bot.wait_until_ready()
 
-    async def update_all_timerboards(self):
+    def _query_timer_state(self):
+        Timer = apps.get_model("structuretimers", "Timer")
+        cutoff = timezone.now() - dt.timedelta(
+            minutes=app_settings.DISCORDTIMERBOARD_PAST_GRACE_MINUTES
+        )
+        agg = Timer.objects.filter(date__isnull=False, date__gte=cutoff).aggregate(
+            count=Count("pk"),
+            latest_update=Max("last_updated_at"),
+        )
+        return (
+            agg.get("count", 0),
+            agg.get("latest_update"),
+        )
+
+    async def update_all_timerboards(self, force: bool = False):
+        current_state = self._query_timer_state()
+        if not force and current_state == self._last_timer_state:
+            return
         for cfg in self._iter_server_configs():
             channel_id = cfg.get("timerboard")
             if not channel_id:
@@ -147,6 +166,7 @@ class DiscordTimerBoard(commands.Cog):
                 logger.warning("Timerboard channel not found for id=%s", channel_id)
                 continue
             await self._update_timerboard_channel(channel)
+        self._last_timer_state = current_state
 
     def _query_timers(self):
         Timer = apps.get_model("structuretimers", "Timer")
@@ -252,7 +272,7 @@ class DiscordTimerBoard(commands.Cog):
         cfg = await self._guard_command_access(ctx)
         if not cfg:
             return
-        await self.update_all_timerboards()
+        await self.update_all_timerboards(force=True)
         await self._send_response(ctx, "Timerboard refreshed.")
 
     @commands.slash_command(
@@ -263,7 +283,7 @@ class DiscordTimerBoard(commands.Cog):
         cfg = await self._guard_command_access(ctx)
         if not cfg:
             return
-        await self.update_all_timerboards()
+        await self.update_all_timerboards(force=True)
         await self._send_response(ctx, "Timerboard refreshed.", ephemeral=True)
 
 
