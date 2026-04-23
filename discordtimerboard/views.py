@@ -29,15 +29,31 @@ def _timer_to_dict(timer) -> dict:
     except AttributeError:
         pass
 
+    system = timer.eve_solar_system.name if timer.eve_solar_system_id else ""
+    structure_name = (timer.structure_name or "").strip()
+    structure_type = timer.structure_type.name if timer.structure_type_id else ""
+    owner = (timer.owner_name or "").strip().strip("[]")
+    timer_type = timer.get_timer_type_display().upper() if timer.timer_type else ""
+
+    notes_parts = []
+    if owner:
+        notes_parts.append(f"[{owner}]")
+    if structure_type:
+        notes_parts.append(f"[{structure_type}]")
+    if timer_type and timer_type != "NONE":
+        notes_parts.append(f"[{timer_type}]")
+    notes = "".join(notes_parts)
+
+    description = f"{system} - {structure_name} {notes}".strip()
+
     return {
-        "id": timer.pk,
+        "timer_id": timer.pk,
         "time": timer.date.isoformat() if timer.date else None,
-        "system": timer.eve_solar_system.name if timer.eve_solar_system_id else None,
+        "system": system,
         "region": region,
-        "structure_name": (timer.structure_name or "").strip(),
-        "structure_type": timer.structure_type.name if timer.structure_type_id else None,
-        "timer_type": timer.timer_type,
-        "owner_name": (timer.owner_name or "").strip(),
+        "structure_name": structure_name,
+        "description": description,
+        "notes": notes,
     }
 
 
