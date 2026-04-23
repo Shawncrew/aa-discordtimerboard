@@ -229,7 +229,7 @@ class DiscordTimerBoard(commands.Cog):
         tags = self._format_tags(timer)
         region_part = f" ({region})" if region else ""
         tags_part = f" {tags}" if tags else ""
-        system_link = f"[{system}]({self._dotlan_system_url(system)})"
+        system_link = f"[{system}](<{self._dotlan_system_url(system)}>)"
         return f"{date_str} {system_link}{region_part} {structure}{tags_part} ({timer.pk})"
 
     # Discord's hard limit is 2000; leave headroom for safety.
