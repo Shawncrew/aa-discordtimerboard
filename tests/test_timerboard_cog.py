@@ -30,7 +30,7 @@ class _FakeTimerModel:
         return None
 
 
-class TestDiscordTimerboardCog(unittest.TestCase):
+class TestDiscordTimerboardCog(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.cog = DiscordTimerBoard.__new__(DiscordTimerBoard)
         self.cog.bot = MagicMock()
@@ -104,14 +104,10 @@ class TestDiscordTimerboardCog(unittest.TestCase):
         self.assertFalse(created)
         self.assertEqual(timer.pk, 1234)
 
-    def test_extract_allowed_role_ids(self):
-        ids = self.cog._extract_allowed_role_ids({"required_role_ids": "123, 456, abc,789"})
-        self.assertEqual(ids, {123, 456, 789})
-
-    def test_author_has_required_role(self):
-        author = SimpleNamespace(roles=[SimpleNamespace(id=123), SimpleNamespace(id=999)])
-        ctx = SimpleNamespace(author=author)
-        cfg = {"required_role_ids": "555,123"}
-        self.assertTrue(self.cog._author_has_required_role(ctx, cfg))
-        cfg = {"required_role_ids": "555,777"}
-        self.assertFalse(self.cog._author_has_required_role(ctx, cfg))
+    @patch("discordtimerboard.cogs.timerboard.get_auth_user")
+    async def test_check_add_perm_uses_structuretimers_permission(self, mock_get_auth_user):
+        mock_get_auth_user.return_value = SimpleNamespace(
+            has_perm=MagicMock(return_value=True)
+        )
+        ctx = SimpleNamespace(author=SimpleNamespace(), guild=SimpleNamespace())
+        self.assertTrue(await self.cog._check_add_perm(ctx))

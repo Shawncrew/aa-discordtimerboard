@@ -116,32 +116,7 @@ class DiscordTimerBoard(commands.Cog):
                 return cfg
         return None
 
-    @staticmethod
-    def _extract_allowed_role_ids(cfg) -> set:
-        raw = (cfg or {}).get("required_role_ids", "") or ""
-        out = set()
-        for token in str(raw).split(","):
-            token = token.strip()
-            if token.isdigit():
-                out.add(int(token))
-        return out
-
-    @staticmethod
-    def _author_has_required_role(ctx_or_interaction, cfg) -> bool:
-        required_role_ids = DiscordTimerBoard._extract_allowed_role_ids(cfg)
-        if not required_role_ids:
-            return True
-        author = getattr(ctx_or_interaction, "author", None) or getattr(
-            ctx_or_interaction, "user", None
-        )
-        if not author:
-            return False
-        author_role_ids = {getattr(r, "id", None) for r in getattr(author, "roles", [])}
-        return any(role_id in author_role_ids for role_id in required_role_ids)
-
-    async def _check_add_perm(self, ctx_or_interaction, cfg) -> bool:
-        if not (cfg or {}).get("require_structuretimers_add_perm", True):
-            return True
+    async def _check_add_perm(self, ctx_or_interaction) -> bool:
         author = getattr(ctx_or_interaction, "author", None) or getattr(
             ctx_or_interaction, "user", None
         )
@@ -270,13 +245,6 @@ class DiscordTimerBoard(commands.Cog):
         cfg = self._get_command_config_for_channel(channel_id)
         if not cfg:
             return None
-        if not self._author_has_required_role(ctx_or_interaction, cfg):
-            await self._send_response(
-                ctx_or_interaction,
-                "You do not have a permitted Discord role for this timer command channel.",
-                ephemeral=True,
-            )
-            return None
         return cfg
 
     @commands.command(name="refresh")
@@ -304,7 +272,7 @@ class DiscordTimerBoard(commands.Cog):
         cfg = await self._guard_command_access(ctx)
         if not cfg:
             return
-        if not await self._check_add_perm(ctx, cfg):
+        if not await self._check_add_perm(ctx):
             await self._send_response(ctx, "You do not have permission to remove timers.")
             return
         await self._remove_timer_impl(ctx, timer_id, ephemeral=False)
@@ -315,7 +283,7 @@ class DiscordTimerBoard(commands.Cog):
         cfg = await self._guard_command_access(ctx)
         if not cfg:
             return
-        if not await self._check_add_perm(ctx, cfg):
+        if not await self._check_add_perm(ctx):
             await self._send_response(ctx, "You do not have permission to remove timers.", ephemeral=True)
             return
         await self._remove_timer_impl(ctx, timer_id, ephemeral=True)
@@ -326,7 +294,7 @@ class DiscordTimerBoard(commands.Cog):
         cfg = await self._guard_command_access(ctx)
         if not cfg:
             return
-        if not await self._check_add_perm(ctx, cfg):
+        if not await self._check_add_perm(ctx):
             await self._send_response(ctx, "You do not have permission to add timers.")
             return
         await self._add_timer_impl(ctx, input_text, ephemeral=False)
@@ -342,7 +310,7 @@ class DiscordTimerBoard(commands.Cog):
         cfg = await self._guard_command_access(ctx)
         if not cfg:
             return
-        if not await self._check_add_perm(ctx, cfg):
+        if not await self._check_add_perm(ctx):
             await self._send_response(ctx, "You do not have permission to add timers.", ephemeral=True)
             return
         await self._add_timer_impl(ctx, input_text, ephemeral=True)

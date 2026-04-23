@@ -13,9 +13,8 @@ It also adds a Discord command channel parser so FCs/scouts can add timers with 
   - `!rm` to remove timers by id
   - `!refresh` to force redraw timerboards
   - `/addtimer`, `/removetimer`, `/refreshtimerboard` slash commands
-- Per-channel command access control:
-  - optional required Discord role IDs
-  - optional requirement for AA permission `structuretimers.add_timer`
+- Add/remove command authorization uses Alliance Auth permission:
+  - `structuretimers.add_timer`
 
 ## Output Format
 
@@ -61,22 +60,20 @@ python manage.py migrate
 
 Then add one or more `Discord Timerboard Config` rows in Django admin.
 
-Each config also supports:
-- `required_role_ids`: comma-separated Discord role IDs (optional)
-- `require_structuretimers_add_perm`: toggle AA permission enforcement for add/remove
+Add one or more rows with timerboard and command channel IDs.
 
-### Option B: static settings fallback
+### Option B: static settings fallback (single Discord server)
 
 ```python
-DISCORDTIMERBOARD_SERVERS = {
-    "main": {
-        "timerboard": 123456789012345678,
-        "commands": 234567890123456789,
-        "required_role_ids": "111111111111111111,222222222222222222",
-        "require_structuretimers_add_perm": True,
-    },
+DISCORDTIMERBOARD_SERVER = {
+    "timerboard": 123456789012345678,
+    "commands": 234567890123456789,
+    # Optional:
+    "guild_id": 345678901234567890,
 }
 ```
+
+If you need multi-server support later, the legacy `DISCORDTIMERBOARD_SERVERS` map is still supported.
 
 4) (Optional) Tune refresh behavior:
 
@@ -119,7 +116,7 @@ INSTALLED_APPS += [
 ]
 ```
 
-Also configure either DB-backed channel rows (recommended) or `DISCORDTIMERBOARD_SERVERS`.
+Also configure either DB-backed channel rows (recommended) or `DISCORDTIMERBOARD_SERVER`.
 
 ### 3) Run migrations inside the running web container
 

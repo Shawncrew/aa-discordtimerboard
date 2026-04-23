@@ -13,10 +13,10 @@ class Migration(migrations.Migration):
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
                 ("name", models.CharField(max_length=64, unique=True)),
                 (
-                    "guild_id",
+                    "discord_server_id",
                     models.BigIntegerField(
                         blank=True,
-                        help_text="Optional Discord guild/server id this config belongs to.",
+                        help_text="Optional Discord server ID this config belongs to.",
                         null=True,
                     ),
                 ),

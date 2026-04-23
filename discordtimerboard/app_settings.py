@@ -18,6 +18,12 @@ DISCORDTIMERBOARD_SERVERS = getattr(
     {},
 )
 
+DISCORDTIMERBOARD_SERVER = getattr(
+    settings,
+    "DISCORDTIMERBOARD_SERVER",
+    {},
+)
+
 DISCORDTIMERBOARD_UPDATE_INTERVAL = int(
     getattr(settings, "DISCORDTIMERBOARD_UPDATE_INTERVAL", 60)
 )
@@ -33,29 +39,26 @@ def get_server_configs():
 
     Preference order:
     1) DB configs from DiscordTimerboardConfig (enabled rows)
-    2) Static fallback from DISCORDTIMERBOARD_SERVERS setting
+    2) Static fallback from DISCORDTIMERBOARD_SERVER setting
+       (or legacy DISCORDTIMERBOARD_SERVERS)
     """
     try:
         DiscordTimerboardConfig = apps.get_model("discordtimerboard", "DiscordTimerboardConfig")
         rows = list(
             DiscordTimerboardConfig.objects.filter(enabled=True).values(
                 "name",
-                "guild_id",
+                "discord_server_id",
                 "timerboard_channel_id",
                 "commands_channel_id",
-                "required_role_ids",
-                "require_structuretimers_add_perm",
             )
         )
         if rows:
             return [
                 {
                     "name": row["name"],
-                    "guild_id": row["guild_id"],
+                    "guild_id": row["discord_server_id"],
                     "timerboard": row["timerboard_channel_id"],
                     "commands": row["commands_channel_id"],
-                    "required_role_ids": row["required_role_ids"],
-                    "require_structuretimers_add_perm": row["require_structuretimers_add_perm"],
                 }
                 for row in rows
             ]
@@ -63,6 +66,21 @@ def get_server_configs():
         # Table may not exist yet before initial migration.
         pass
 
+    # Preferred static config: single server block.
+    if isinstance(DISCORDTIMERBOARD_SERVER, dict):
+        timerboard = DISCORDTIMERBOARD_SERVER.get("timerboard")
+        commands = DISCORDTIMERBOARD_SERVER.get("commands")
+        if timerboard and commands:
+            return [
+                {
+                    "name": "default",
+                    "guild_id": DISCORDTIMERBOARD_SERVER.get("guild_id"),
+                    "timerboard": timerboard,
+                    "commands": commands,
+                }
+            ]
+
+    # Legacy static config: multi-server map.
     configs = []
     for name, cfg in DISCORDTIMERBOARD_SERVERS.items():
         if not isinstance(cfg, dict):
@@ -73,10 +91,6 @@ def get_server_configs():
                 "guild_id": cfg.get("guild_id"),
                 "timerboard": cfg.get("timerboard"),
                 "commands": cfg.get("commands"),
-                "required_role_ids": cfg.get("required_role_ids", ""),
-                "require_structuretimers_add_perm": cfg.get(
-                    "require_structuretimers_add_perm", True
-                ),
             }
         )
     return configs
