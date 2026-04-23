@@ -74,7 +74,34 @@ def parse_add_input(input_text: str, now_utc: Optional[dt.datetime] = None) -> O
             tags=[owner_tag, "MERCENARY DEN", "FINAL"],
         )
 
-    # Format 1: direct timestamp line
+    # Format 1a: timerboard output format (copy-paste from timerboard channel)
+    # e.g. 2026-04-23 19:15:59 CL6-ZG (Pure Blind) Microplastic [INIT][ASTRA][FINAL] (5292)
+    # System name may be wrapped in a Discord markdown link: [CL6-ZG](<url>)
+    # Region is optional (some timers have no region resolved).
+    # Trailing (id) is optional.
+    timerboard_line = re.match(
+        r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+"
+        r"(?:\[([A-Za-z0-9-]+)\]\(<[^>]+>\)|([A-Za-z0-9-]+))"  # [SYSTEM](<url>) or SYSTEM
+        r"(?:\s+\([^)]+\))?"                                     # optional (Region)
+        r"\s+(.+?)"                                              # structure name + tags
+        r"(?:\s+\(\d+\))?\s*$",                                  # optional trailing (id)
+        text,
+    )
+    if timerboard_line:
+        when = dt.datetime.strptime(timerboard_line.group(1), "%Y-%m-%d %H:%M:%S")
+        system = (timerboard_line.group(2) or timerboard_line.group(3)).strip()
+        rest = timerboard_line.group(4).strip()
+        tags = re.findall(r"\[([^\]]+)\]", rest)
+        structure_name = re.sub(r"\s*(\[[^\]]+\])+\s*$", "", rest).strip()
+        if system and structure_name:
+            return ParsedTimerInput(
+                timer_time=_make_aware_utc(when),
+                system=system,
+                structure_name=structure_name,
+                tags=tags,
+            )
+
+    # Format 1b: direct timestamp line with dash separator
     direct = re.match(
         r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s+([A-Za-z0-9-]+)\s*-\s*(.+)$",
         text,
