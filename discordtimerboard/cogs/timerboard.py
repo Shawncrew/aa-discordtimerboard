@@ -148,9 +148,15 @@ class DiscordTimerBoard(commands.Cog):
             count=Count("pk"),
             latest_update=Max("last_updated_at"),
         )
+        # Include current EVE minute so the header refreshes every minute even
+        # when timer rows are unchanged.
+        eve_minute = timezone.now().astimezone(dt.timezone.utc).replace(
+            second=0, microsecond=0
+        )
         return (
             agg.get("count", 0),
             agg.get("latest_update"),
+            eve_minute,
         )
 
     async def update_all_timerboards(self, force: bool = False):
@@ -217,7 +223,8 @@ class DiscordTimerBoard(commands.Cog):
         timers = self._query_timers()
         lines = [self._format_line(t) for t in timers]
 
-        header = f"Current Time: {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        eve_now = timezone.now().astimezone(dt.timezone.utc)
+        header = f"Current Eve Time (UTC): {eve_now.strftime('%Y-%m-%d %H:%M')}"
         content_lines = [header, ""] + (lines if lines else ["No active timers."])
 
         max_len = 1900
