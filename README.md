@@ -75,8 +75,8 @@ Notes:
 Rebuild the images to pick up the new requirement, then restart the affected services:
 
 ```bash
-docker compose up -d --build allianceauth_gunicorn allianceauth_discordbot allianceauth_worker_beat
-docker compose restart allianceauth_worker_pingbot allianceauth_worker_services
+docker compose up -d --build allianceauth_gunicorn allianceauth_discordbot allianceauth_beat
+docker compose restart allianceauth_worker allianceauth_worker_pingbot allianceauth_worker_services
 ```
 
 If you run multiple worker replicas (e.g. `aa-docker-allianceauth_worker-1` through `-5`), restart those too:
