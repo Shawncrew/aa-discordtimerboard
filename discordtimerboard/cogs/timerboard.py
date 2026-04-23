@@ -2,6 +2,8 @@ import datetime as dt
 import logging
 from typing import Optional
 
+import discord
+
 from aadiscordbot.utils.auth import get_auth_user
 try:
     from discord import option
@@ -93,10 +95,14 @@ MODEL_TIMER_TO_TAG = {
 }
 
 
+_REFRESH_COOLDOWN_SECONDS = 30
+
+
 class DiscordTimerBoard(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self._last_timer_state = None
+        self._last_manual_refresh: dict[int, dt.datetime] = {}
         if not self.refresh_boards.is_running():
             self.refresh_boards.start()
 
@@ -125,7 +131,8 @@ class DiscordTimerBoard(commands.Cog):
         guild = getattr(ctx_or_interaction, "guild", None)
         try:
             auth_user = get_auth_user(author, guild=guild)
-        except Exception:
+        except Exception as e:
+            logger.warning("Permission check failed for user=%s guild=%s: %s", author, guild, e)
             return False
         return auth_user.has_perm("structuretimers.add_timer")
 
@@ -211,13 +218,18 @@ class DiscordTimerBoard(commands.Cog):
         region = ""
         try:
             region = timer.eve_solar_system.eve_constellation.eve_region.name
-        except Exception:
-            region = ""
+        except AttributeError as e:
+            logger.warning("Region lookup failed for timer pk=%s system_id=%s: %s", timer.pk, timer.eve_solar_system_id, e)
         structure = (timer.structure_name or "").strip() or timer.structure_type.name
         tags = self._format_tags(timer)
         region_part = f" ({region})" if region else ""
         tags_part = f" {tags}" if tags else ""
         return f"{date_str} {system}{region_part} {structure}{tags_part} ({timer.pk})"
+
+    # Discord's hard limit is 2000; leave headroom for safety.
+    _DISCORD_MSG_MAX_LEN = 1900
+    # Safety cap on how many bot messages we track in a channel.
+    _HISTORY_BOT_MSG_LIMIT = 200
 
     async def _update_timerboard_channel(self, channel):
         timers = self._query_timers()
@@ -227,12 +239,11 @@ class DiscordTimerBoard(commands.Cog):
         header = f"Current Eve Time (UTC): {eve_now.strftime('%Y-%m-%d %H:%M')}"
         content_lines = [header, ""] + (lines if lines else ["No active timers."])
 
-        max_len = 1900
         payloads = []
         current = ""
         for line in content_lines:
             candidate = f"{current}\n{line}".strip("\n") if current else line
-            if len(candidate) > max_len:
+            if len(candidate) > self._DISCORD_MSG_MAX_LEN:
                 payloads.append(current)
                 current = line
             else:
@@ -241,18 +252,45 @@ class DiscordTimerBoard(commands.Cog):
             payloads.append(current)
 
         existing = []
-        async for msg in channel.history(limit=100):
-            if msg.author == self.bot.user:
-                existing.append(msg)
+        try:
+            async for msg in channel.history(limit=None):
+                if msg.author == self.bot.user:
+                    existing.append(msg)
+                    if len(existing) >= self._HISTORY_BOT_MSG_LIMIT:
+                        logger.warning(
+                            "Channel id=%s has >= %d bot messages; capping history scan",
+                            channel.id,
+                            self._HISTORY_BOT_MSG_LIMIT,
+                        )
+                        break
+        except discord.errors.Forbidden:
+            logger.error("No permission to read history in channel id=%s", channel.id)
+            return
         existing.reverse()
 
         for idx, payload in enumerate(payloads):
             if idx < len(existing):
-                await existing[idx].edit(content=payload)
+                try:
+                    await existing[idx].edit(content=payload)
+                except discord.errors.NotFound:
+                    logger.warning("Message id=%s not found while editing; sending new", existing[idx].id)
+                    await channel.send(payload)
+                except discord.errors.Forbidden:
+                    logger.error("No permission to edit message id=%s in channel id=%s", existing[idx].id, channel.id)
             else:
-                await channel.send(payload)
+                try:
+                    await channel.send(payload)
+                except discord.errors.Forbidden:
+                    logger.error("No permission to send messages in channel id=%s", channel.id)
+                    return
+
         for extra in existing[len(payloads):]:
-            await extra.delete()
+            try:
+                await extra.delete()
+            except discord.errors.NotFound:
+                pass  # Already gone, nothing to do.
+            except discord.errors.Forbidden:
+                logger.error("No permission to delete message id=%s in channel id=%s", extra.id, channel.id)
 
     async def _send_response(self, ctx_or_interaction, message: str, ephemeral: bool = False):
         if hasattr(ctx_or_interaction, "response"):
@@ -274,11 +312,28 @@ class DiscordTimerBoard(commands.Cog):
             return None
         return cfg
 
+    def _check_refresh_cooldown(self, channel_id: int) -> Optional[int]:
+        """Return remaining cooldown seconds, or None if the cooldown has passed."""
+        last = self._last_manual_refresh.get(channel_id)
+        if last is None:
+            return None
+        elapsed = (timezone.now() - last).total_seconds()
+        remaining = _REFRESH_COOLDOWN_SECONDS - elapsed
+        return int(remaining) + 1 if remaining > 0 else None
+
+    def _mark_refresh(self, channel_id: int):
+        self._last_manual_refresh[channel_id] = timezone.now()
+
     @commands.command(name="refresh")
     async def refresh_cmd(self, ctx):
         cfg = await self._guard_command_access(ctx)
         if not cfg:
             return
+        remaining = self._check_refresh_cooldown(ctx.channel.id)
+        if remaining is not None:
+            await self._send_response(ctx, f"Refresh is on cooldown. Try again in {remaining}s.")
+            return
+        self._mark_refresh(ctx.channel.id)
         await self.update_all_timerboards(force=True)
         await self._send_response(ctx, "Timerboard refreshed.")
 
@@ -290,6 +345,11 @@ class DiscordTimerBoard(commands.Cog):
         cfg = await self._guard_command_access(ctx)
         if not cfg:
             return
+        remaining = self._check_refresh_cooldown(ctx.channel.id)
+        if remaining is not None:
+            await self._send_response(ctx, f"Refresh is on cooldown. Try again in {remaining}s.", ephemeral=True)
+            return
+        self._mark_refresh(ctx.channel.id)
         await self.update_all_timerboards(force=True)
         await self._send_response(ctx, "Timerboard refreshed.", ephemeral=True)
 
@@ -390,7 +450,16 @@ class DiscordTimerBoard(commands.Cog):
                 ephemeral=ephemeral,
             )
             return
-        timer.delete()
+        try:
+            timer.delete()
+        except Exception as e:
+            logger.error("Failed to delete timer pk=%s: %s", timer_id, e)
+            await self._send_response(
+                ctx_or_interaction,
+                f"Error removing timer {timer_id}. Check logs for details.",
+                ephemeral=ephemeral,
+            )
+            return
         await self.update_all_timerboards()
         await self._send_response(
             ctx_or_interaction,
@@ -405,7 +474,9 @@ class DiscordTimerBoard(commands.Cog):
         if type_name:
             t = EveType.objects.filter(name__iexact=type_name).first()
             if t:
+                logger.debug("Resolved structure type %r via tag %r", type_name, struct_tag)
                 return t
+            logger.debug("Tag %r mapped to %r but EveType not found in DB", struct_tag, type_name)
 
         # Fallback: infer from structure name.
         upper_name = parsed.structure_name.upper()
@@ -413,6 +484,7 @@ class DiscordTimerBoard(commands.Cog):
             if alias in upper_name:
                 t = EveType.objects.filter(name__iexact=eve_name).first()
                 if t:
+                    logger.debug("Resolved structure type %r via structure name alias %r", eve_name, alias)
                     return t
 
         # Last fallback: substring search by structure words.
@@ -423,7 +495,14 @@ class DiscordTimerBoard(commands.Cog):
                 if token in alias:
                     t = EveType.objects.filter(name__iexact=eve_name).first()
                     if t:
+                        logger.debug("Resolved structure type %r via token %r matching alias %r", eve_name, token, alias)
                         return t
+
+        logger.warning(
+            "Could not resolve structure type: tags=%r structure_name=%r",
+            parsed.tags,
+            parsed.structure_name,
+        )
         return None
 
     def _resolve_timer_type(self, parsed: ParsedTimerInput) -> str:
@@ -481,7 +560,8 @@ class DiscordTimerBoard(commands.Cog):
         guild = getattr(ctx_or_interaction, "guild", None)
         try:
             auth_user = get_auth_user(author, guild=guild)
-        except Exception:
+        except Exception as e:
+            logger.warning("Could not resolve auth user for author=%s guild=%s: %s", author, guild, e)
             auth_user = None
         if auth_user:
             timer.user = auth_user
@@ -490,8 +570,8 @@ class DiscordTimerBoard(commands.Cog):
                 timer.eve_character = main
                 timer.eve_corporation = main.corporation
                 timer.eve_alliance = getattr(main, "alliance", None)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Could not set character/corp/alliance for user=%s on timer: %s", auth_user, e)
 
         timer.save()
         return timer, True, None
