@@ -56,6 +56,7 @@ def get_server_configs():
                     "warning_minutes": cfg.warning_minutes,
                     "sov_notifications_enabled": cfg.sov_notifications_enabled,
                     "sov_alliance_ids": alliance_ids,
+                    "strikethrough_minutes": cfg.strikethrough_minutes,
                 }
             )
         if configs:

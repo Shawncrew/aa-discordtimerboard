@@ -103,10 +103,9 @@ class DiscordTimerBoard(commands.Cog):
         self.bot = bot
         self._last_timer_state = None
         self._last_manual_refresh: dict[int, dt.datetime] = {}
-        # Maps commands_channel_id -> set of timer PKs already notified.
+        # Maps commands_channel_id -> set of timer PKs already notified (in-memory cache).
         self._notified_warning: dict[int, set[int]] = {}
         self._notified_start: dict[int, set[int]] = {}
-        # Same for sov campaign IDs.
         self._notified_sov_warning: dict[int, set[int]] = {}
         self._notified_sov_start: dict[int, set[int]] = {}
         if not self.refresh_boards.is_running():
@@ -156,6 +155,27 @@ class DiscordTimerBoard(commands.Cog):
     @refresh_boards.before_loop
     async def _before_refresh_boards(self):
         await self.bot.wait_until_ready()
+        self._load_sent_notifications()
+
+    def _load_sent_notifications(self):
+        """Populate in-memory notification cache from DB so reboots don't re-alert."""
+        try:
+            SentNotification = apps.get_model("discordtimerboard", "SentNotification")
+            for notif in SentNotification.objects.all():
+                ch = notif.commands_channel_id
+                tid = notif.timer_id
+                if notif.timer_type == SentNotification.STRUCTURE:
+                    if notif.notification_type == SentNotification.WARNING:
+                        self._notified_warning.setdefault(ch, set()).add(tid)
+                    else:
+                        self._notified_start.setdefault(ch, set()).add(tid)
+                else:
+                    if notif.notification_type == SentNotification.WARNING:
+                        self._notified_sov_warning.setdefault(ch, set()).add(tid)
+                    else:
+                        self._notified_sov_start.setdefault(ch, set()).add(tid)
+        except Exception as e:
+            logger.warning("Failed to load sent notifications from DB: %s", e)
 
     def _query_upcoming_timers(self, lookahead_minutes: int):
         Timer = apps.get_model("structuretimers", "Timer")
@@ -188,7 +208,12 @@ class DiscordTimerBoard(commands.Cog):
         timers = self._query_upcoming_timers(max_warning_minutes)
         now = timezone.now()
 
-        # Prune PKs for timers that have aged out of the query window.
+        try:
+            SentNotification = apps.get_model("discordtimerboard", "SentNotification")
+        except LookupError:
+            SentNotification = None
+
+        # Prune in-memory cache to active timer PKs only.
         active_pks = {t.pk for t in timers}
         for ch_id in list(self._notified_warning):
             self._notified_warning[ch_id] &= active_pks
@@ -217,33 +242,33 @@ class DiscordTimerBoard(commands.Cog):
             for timer in timers:
                 minutes_until = (timer.date - now).total_seconds() / 60
 
-                if (
-                    warning_enabled
-                    and timer.pk not in warned
-                    and 0 < minutes_until <= warning_minutes
-                ):
-                    msg = (
-                        f":warning: **Timer warning ({warning_minutes}m):** "
-                        f"{self._format_line(timer)}"
-                    )
+                if warning_enabled and timer.pk not in warned and 0 < minutes_until <= warning_minutes:
+                    msg = f":warning: **Timer warning ({warning_minutes}m):** {self._format_line(timer)}"
                     try:
                         await channel.send(msg)
                         warned.add(timer.pk)
+                        if SentNotification:
+                            SentNotification.objects.get_or_create(
+                                timer_type=SentNotification.STRUCTURE,
+                                timer_id=timer.pk,
+                                notification_type=SentNotification.WARNING,
+                                commands_channel_id=commands_channel_id,
+                            )
                     except discord.errors.Forbidden:
                         logger.error("No permission to send to commands channel id=%s", commands_channel_id)
 
-                if (
-                    start_enabled
-                    and timer.pk not in started
-                    and minutes_until <= 0
-                ):
-                    msg = (
-                        f":alarm_clock: **Timer starting now:** "
-                        f"{self._format_line(timer)}"
-                    )
+                if start_enabled and timer.pk not in started and minutes_until <= 0:
+                    msg = f":alarm_clock: **Timer starting now:** {self._format_line(timer)}"
                     try:
                         await channel.send(msg)
                         started.add(timer.pk)
+                        if SentNotification:
+                            SentNotification.objects.get_or_create(
+                                timer_type=SentNotification.STRUCTURE,
+                                timer_id=timer.pk,
+                                notification_type=SentNotification.START,
+                                commands_channel_id=commands_channel_id,
+                            )
                     except discord.errors.Forbidden:
                         logger.error("No permission to send to commands channel id=%s", commands_channel_id)
 
@@ -266,35 +291,43 @@ class DiscordTimerBoard(commands.Cog):
                     continue
                 minutes_until = (end_time - now).total_seconds() / 60
 
-                if (
-                    warning_enabled
-                    and campaign.campaign_id not in sov_warned
-                    and 0 < minutes_until <= warning_minutes
-                ):
-                    msg = (
-                        f":warning: **Sov timer warning ({warning_minutes}m):** "
-                        f"{self._format_sov_line(campaign)}"
-                    )
+                if warning_enabled and campaign.campaign_id not in sov_warned and 0 < minutes_until <= warning_minutes:
+                    msg = f":warning: **Sov timer warning ({warning_minutes}m):** {self._format_sov_line(campaign)}"
                     try:
                         await channel.send(msg)
                         sov_warned.add(campaign.campaign_id)
+                        if SentNotification:
+                            SentNotification.objects.get_or_create(
+                                timer_type=SentNotification.SOV,
+                                timer_id=campaign.campaign_id,
+                                notification_type=SentNotification.WARNING,
+                                commands_channel_id=commands_channel_id,
+                            )
                     except discord.errors.Forbidden:
                         logger.error("No permission to send to commands channel id=%s", commands_channel_id)
 
-                if (
-                    start_enabled
-                    and campaign.campaign_id not in sov_started
-                    and minutes_until <= 0
-                ):
-                    msg = (
-                        f":alarm_clock: **Sov timer ending now:** "
-                        f"{self._format_sov_line(campaign)}"
-                    )
+                if start_enabled and campaign.campaign_id not in sov_started and minutes_until <= 0:
+                    msg = f":alarm_clock: **Sov timer ending now:** {self._format_sov_line(campaign)}"
                     try:
                         await channel.send(msg)
                         sov_started.add(campaign.campaign_id)
+                        if SentNotification:
+                            SentNotification.objects.get_or_create(
+                                timer_type=SentNotification.SOV,
+                                timer_id=campaign.campaign_id,
+                                notification_type=SentNotification.START,
+                                commands_channel_id=commands_channel_id,
+                            )
                     except discord.errors.Forbidden:
                         logger.error("No permission to send to commands channel id=%s", commands_channel_id)
+
+        # Clean up DB records for timers that no longer exist.
+        if SentNotification:
+            try:
+                cutoff = now - dt.timedelta(minutes=app_settings.DISCORDTIMERBOARD_PAST_GRACE_MINUTES)
+                SentNotification.objects.filter(sent_at__lt=cutoff).delete()
+            except Exception as e:
+                logger.warning("Failed to clean up SentNotification records: %s", e)
 
     def _query_sov_campaigns(self, alliance_ids: list[int]):
         if not self._sovtimer_available() or not alliance_ids:
@@ -402,11 +435,11 @@ class DiscordTimerBoard(commands.Cog):
             await self._update_timerboard_channel(channel, cfg=cfg, recreate=recreate)
         self._last_timer_state = current_state
 
-    def _query_timers(self):
+    def _query_timers(self, past_minutes: int = None):
         Timer = apps.get_model("structuretimers", "Timer")
-        cutoff = timezone.now() - dt.timedelta(
-            minutes=app_settings.DISCORDTIMERBOARD_PAST_GRACE_MINUTES
-        )
+        if past_minutes is None:
+            past_minutes = app_settings.DISCORDTIMERBOARD_PAST_GRACE_MINUTES
+        cutoff = timezone.now() - dt.timedelta(minutes=past_minutes)
         return (
             Timer.objects.select_related(
                 "eve_solar_system__eve_constellation__eve_region",
@@ -459,13 +492,25 @@ class DiscordTimerBoard(commands.Cog):
     _HISTORY_BOT_MSG_LIMIT = 200
 
     async def _update_timerboard_channel(self, channel, cfg: dict = None, recreate: bool = False):
-        timers = self._query_timers()
-        lines = [self._format_line(t) for t in timers]
+        strikethrough_minutes = cfg.get("strikethrough_minutes", 5) if cfg else 5
+        now = timezone.now()
+        timers = self._query_timers(past_minutes=strikethrough_minutes)
+        lines = []
+        for t in timers:
+            line = self._format_line(t)
+            if t.date and t.date <= now:
+                line = f"~~{line}~~"
+            lines.append(line)
 
         if cfg and cfg.get("sov_notifications_enabled"):
             sov_alliance_ids = cfg.get("sov_alliance_ids") or []
             sov_campaigns = self._query_sov_campaigns(sov_alliance_ids)
-            lines += [self._format_sov_line(c) for c in sov_campaigns]
+            for c in sov_campaigns:
+                line = self._format_sov_line(c)
+                end_time = (c.structure.vulnerable_end_time if c.structure else None) or c.start_time
+                if end_time and end_time <= now:
+                    line = f"~~{line}~~"
+                lines.append(line)
 
         eve_now = timezone.now().astimezone(dt.timezone.utc)
         header = f"Current Eve Time (UTC): {eve_now.strftime('%Y-%m-%d %H:%M')}"

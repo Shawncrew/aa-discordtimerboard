@@ -31,6 +31,10 @@ class DiscordTimerboardConfig(models.Model):
         default=60,
         help_text="How many minutes before a timer to post the warning notification.",
     )
+    strikethrough_minutes = models.PositiveIntegerField(
+        default=5,
+        help_text="How many minutes to show a fired timer as struck-through before removing it.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -54,6 +58,27 @@ class SovAllianceFilter(models.Model):
 
     def __str__(self):
         return str(self.alliance_id)
+
+
+class SentNotification(models.Model):
+    """Tracks which notifications have been posted so reboots don't re-alert."""
+
+    WARNING = "warning"
+    START = "start"
+    STRUCTURE = "structure"
+    SOV = "sov"
+
+    timer_type = models.CharField(max_length=16)
+    timer_id = models.IntegerField(db_index=True)
+    notification_type = models.CharField(max_length=16)
+    commands_channel_id = models.BigIntegerField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("timer_type", "timer_id", "notification_type", "commands_channel_id")
+
+    def __str__(self):
+        return f"{self.timer_type}:{self.timer_id} {self.notification_type}"
 
 
 class ArchivedTimer(models.Model):

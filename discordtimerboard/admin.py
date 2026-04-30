@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.contrib.admin.widgets import FilteredSelectMultiple
 from django.apps import apps
 
-from .models import ArchivedTimer, DiscordTimerboardConfig, SovAllianceFilter
+from .models import ArchivedTimer, DiscordTimerboardConfig, SentNotification, SovAllianceFilter
 
 
 class DiscordTimerboardConfigForm(forms.ModelForm):
@@ -49,6 +49,7 @@ class DiscordTimerboardConfigAdmin(admin.ModelAdmin):
         "warning_notifications_enabled",
         "start_notifications_enabled",
         "warning_minutes",
+        "strikethrough_minutes",
         "updated_at",
     )
     list_filter = ("enabled", "sov_notifications_enabled", "warning_notifications_enabled", "start_notifications_enabled")
@@ -74,6 +75,13 @@ class DiscordTimerboardConfigAdmin(admin.ModelAdmin):
         for alliance in selected:
             if alliance.alliance_id not in existing_ids:
                 SovAllianceFilter.objects.create(config_id=obj.pk, alliance_id=alliance.alliance_id)
+
+
+@admin.register(SentNotification)
+class SentNotificationAdmin(admin.ModelAdmin):
+    list_display = ("timer_type", "timer_id", "notification_type", "commands_channel_id", "sent_at")
+    list_filter = ("timer_type", "notification_type")
+    readonly_fields = ("timer_type", "timer_id", "notification_type", "commands_channel_id", "sent_at")
 
 
 @admin.register(ArchivedTimer)
