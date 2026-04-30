@@ -99,6 +99,8 @@ _REFRESH_COOLDOWN_SECONDS = 30
 
 
 class DiscordTimerBoard(commands.Cog):
+    _alliance_ticker_cache: dict[int, str] = {}
+
     def __init__(self, bot):
         self.bot = bot
         self._last_timer_state = None
@@ -386,6 +388,34 @@ class DiscordTimerBoard(commands.Cog):
             ).order_by("start_time")
         )
 
+    @classmethod
+    def _get_alliance_ticker(cls, alliance_id: int) -> str:
+        if alliance_id in cls._alliance_ticker_cache:
+            return cls._alliance_ticker_cache[alliance_id]
+        ticker = ""
+        # Try AA's EveAllianceInfo first (fast, no ESI call).
+        try:
+            from allianceauth.eveonline.models import EveAllianceInfo
+            info = EveAllianceInfo.objects.filter(alliance_id=alliance_id).first()
+            if info:
+                ticker = info.alliance_ticker
+        except Exception:
+            pass
+        # Fall back to ESI for any alliance not in local auth.
+        if not ticker:
+            try:
+                import requests
+                resp = requests.get(
+                    f"https://esi.evetech.net/latest/alliances/{alliance_id}/",
+                    timeout=5,
+                )
+                if resp.ok:
+                    ticker = resp.json().get("ticker", "")
+            except Exception as e:
+                logger.warning("ESI ticker fetch failed for alliance_id=%s: %s", alliance_id, e)
+        cls._alliance_ticker_cache[alliance_id] = ticker
+        return ticker
+
     _SOV_EVENT_TYPE_MAP = {
         "ihub_defense": ("Infrastructure Hub", "IHUB"),
         "tcu_defense": ("Territorial Claim Unit", "TCU"),
@@ -415,12 +445,9 @@ class DiscordTimerBoard(commands.Cog):
 
         ticker = ""
         try:
-            from allianceauth.eveonline.models import EveAllianceInfo
             alliance_id = structure.alliance.alliance_id if structure and structure.alliance_id else None
             if alliance_id:
-                info = EveAllianceInfo.objects.filter(alliance_id=alliance_id).first()
-                if info:
-                    ticker = info.alliance_ticker
+                ticker = DiscordTimerBoard._get_alliance_ticker(alliance_id)
         except Exception:
             pass
 
