@@ -151,6 +151,7 @@ class DiscordTimerBoard(commands.Cog):
             return
         await self.update_all_timerboards()
         await self._send_timer_notifications()
+        self._archive_expired_timers()
 
     @refresh_boards.before_loop
     async def _before_refresh_boards(self):
@@ -176,6 +177,40 @@ class DiscordTimerBoard(commands.Cog):
                         self._notified_sov_start.setdefault(ch, set()).add(tid)
         except Exception as e:
             logger.warning("Failed to load sent notifications from DB: %s", e)
+
+    def _archive_expired_timers(self):
+        """Archive and delete structure timers whose strikethrough window has passed."""
+        if not self._structuretimers_available():
+            return
+        configs = list(self._iter_server_configs())
+        if not configs:
+            return
+        # Use the smallest strikethrough_minutes across configs as the cutoff.
+        min_strikethrough = min(cfg.get("strikethrough_minutes", 5) for cfg in configs)
+        cutoff = timezone.now() - dt.timedelta(minutes=min_strikethrough)
+        try:
+            Timer = apps.get_model("structuretimers", "Timer")
+            ArchivedTimer = apps.get_model("discordtimerboard", "ArchivedTimer")
+            expired = Timer.objects.select_related(
+                "eve_solar_system", "structure_type"
+            ).filter(date__isnull=False, date__lt=cutoff).exclude(timer_type="MM")
+            for timer in expired:
+                try:
+                    ArchivedTimer.objects.create(
+                        original_id=timer.pk,
+                        timer_date=timer.date,
+                        system_name=timer.eve_solar_system.name if timer.eve_solar_system_id else "",
+                        structure_type_name=timer.structure_type.name if timer.structure_type_id else "",
+                        structure_name=(timer.structure_name or "").strip(),
+                        owner_name=(timer.owner_name or "").strip(),
+                        timer_type=timer.timer_type or "",
+                        archived_by="auto",
+                    )
+                    timer.delete()
+                except Exception as e:
+                    logger.error("Failed to auto-archive timer pk=%s: %s", timer.pk, e)
+        except Exception as e:
+            logger.error("Error in _archive_expired_timers: %s", e)
 
     def _query_upcoming_timers(self, lookahead_minutes: int):
         Timer = apps.get_model("structuretimers", "Timer")
