@@ -318,23 +318,54 @@ class DiscordTimerBoard(commands.Cog):
             ).order_by("start_time")
         )
 
+    _SOV_EVENT_TYPE_MAP = {
+        "ihub_defense": ("Infrastructure Hub", "IHUB"),
+        "tcu_defense": ("Territorial Claim Unit", "TCU"),
+        "sovhub": ("Infrastructure Hub", "IHUB"),
+        "outpost_defense": ("Outpost", "OUTPOST"),
+    }
+
     @staticmethod
     def _format_sov_line(campaign) -> str:
         structure = campaign.structure
+
         try:
             system = structure.solar_system.name
         except AttributeError:
             system = "Unknown"
+
+        region = ""
         try:
-            alliance = structure.alliance.name
-        except AttributeError:
-            alliance = "Unknown"
-        end_time = structure.vulnerable_end_time or campaign.start_time
-        date_str = timezone.localtime(end_time).strftime("%Y-%m-%d %H:%M:%S") if end_time else "?"
-        event_label = campaign.get_event_type_display() if hasattr(campaign, "get_event_type_display") else campaign.event_type
-        status = "active" if structure.vulnerable_end_time is None else ""
-        suffix = " [ACTIVE]" if status else ""
-        return f"🛡 {date_str} {system} [{alliance}] {event_label}{suffix} ({campaign.campaign_id})"
+            from eveuniverse.models import EveSolarSystem as EveUniSystem
+            eve_sys = EveUniSystem.objects.filter(name__iexact=system).select_related(
+                "eve_constellation__eve_region"
+            ).first()
+            if eve_sys:
+                region = eve_sys.eve_constellation.eve_region.name
+        except Exception:
+            pass
+
+        ticker = ""
+        try:
+            from allianceauth.eveonline.models import EveAllianceInfo
+            alliance_id = structure.alliance.alliance_id if structure and structure.alliance_id else None
+            if alliance_id:
+                info = EveAllianceInfo.objects.filter(alliance_id=alliance_id).first()
+                if info:
+                    ticker = info.alliance_ticker
+        except Exception:
+            pass
+
+        event_type = campaign.event_type or ""
+        struct_name, type_tag = DiscordTimerBoard._SOV_EVENT_TYPE_MAP.get(
+            event_type.lower(), (event_type, event_type.upper()[:8])
+        )
+
+        date_str = timezone.localtime(campaign.start_time).strftime("%Y-%m-%d %H:%M:%S") if campaign.start_time else "?"
+        region_part = f" ({region})" if region else ""
+        ticker_tag = f"[{ticker}]" if ticker else ""
+
+        return f"{date_str} {system}{region_part} {struct_name} {ticker_tag}[{type_tag}] 🛡️"
 
     def _query_timer_state(self):
         Timer = apps.get_model("structuretimers", "Timer")
