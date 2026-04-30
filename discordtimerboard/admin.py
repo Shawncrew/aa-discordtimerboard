@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import ArchivedTimer, DiscordTimerboardConfig
+from .models import ArchivedTimer, DiscordTimerboardConfig, SovAllianceFilter
+
+
+class SovAllianceFilterInline(admin.TabularInline):
+    model = SovAllianceFilter
+    extra = 1
+    fields = ("alliance_id", "alliance_name")
 
 
 @admin.register(DiscordTimerboardConfig)
@@ -11,18 +17,20 @@ class DiscordTimerboardConfigAdmin(admin.ModelAdmin):
         "timerboard_channel_id",
         "commands_channel_id",
         "enabled",
+        "sov_notifications_enabled",
         "warning_notifications_enabled",
         "start_notifications_enabled",
         "warning_minutes",
         "updated_at",
     )
-    list_filter = ("enabled", "warning_notifications_enabled", "start_notifications_enabled")
+    list_filter = ("enabled", "sov_notifications_enabled", "warning_notifications_enabled", "start_notifications_enabled")
     search_fields = (
         "name",
         "discord_server_id",
         "timerboard_channel_id",
         "commands_channel_id",
     )
+    inlines = [SovAllianceFilterInline]
 
 
 @admin.register(ArchivedTimer)

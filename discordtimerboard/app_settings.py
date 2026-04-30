@@ -39,30 +39,29 @@ def get_server_configs():
     """
     try:
         DiscordTimerboardConfig = apps.get_model("discordtimerboard", "DiscordTimerboardConfig")
-        rows = list(
-            DiscordTimerboardConfig.objects.filter(enabled=True).values(
-                "name",
-                "discord_server_id",
-                "timerboard_channel_id",
-                "commands_channel_id",
-                "warning_notifications_enabled",
-                "start_notifications_enabled",
-                "warning_minutes",
-            )
+        qs = DiscordTimerboardConfig.objects.filter(enabled=True).prefetch_related(
+            "sov_alliance_filters"
         )
-        if rows:
-            return [
+        configs = []
+        for cfg in qs:
+            alliance_ids = list(
+                cfg.sov_alliance_filters.values_list("alliance_id", flat=True)
+            )
+            configs.append(
                 {
-                    "name": row["name"],
-                    "guild_id": row["discord_server_id"],
-                    "timerboard": row["timerboard_channel_id"],
-                    "commands": row["commands_channel_id"],
-                    "warning_notifications_enabled": row["warning_notifications_enabled"],
-                    "start_notifications_enabled": row["start_notifications_enabled"],
-                    "warning_minutes": row["warning_minutes"],
+                    "name": cfg.name,
+                    "guild_id": cfg.discord_server_id,
+                    "timerboard": cfg.timerboard_channel_id,
+                    "commands": cfg.commands_channel_id,
+                    "warning_notifications_enabled": cfg.warning_notifications_enabled,
+                    "start_notifications_enabled": cfg.start_notifications_enabled,
+                    "warning_minutes": cfg.warning_minutes,
+                    "sov_notifications_enabled": cfg.sov_notifications_enabled,
+                    "sov_alliance_ids": alliance_ids,
                 }
-                for row in rows
-            ]
+            )
+        if configs:
+            return configs
     except (LookupError, OperationalError, ProgrammingError):
         # Table may not exist yet before initial migration.
         pass

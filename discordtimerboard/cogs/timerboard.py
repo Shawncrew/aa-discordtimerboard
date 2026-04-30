@@ -106,6 +106,9 @@ class DiscordTimerBoard(commands.Cog):
         # Maps commands_channel_id -> set of timer PKs already notified.
         self._notified_warning: dict[int, set[int]] = {}
         self._notified_start: dict[int, set[int]] = {}
+        # Same for sov campaign IDs.
+        self._notified_sov_warning: dict[int, set[int]] = {}
+        self._notified_sov_start: dict[int, set[int]] = {}
         if not self.refresh_boards.is_running():
             self.refresh_boards.start()
 
@@ -116,6 +119,10 @@ class DiscordTimerBoard(commands.Cog):
     @staticmethod
     def _structuretimers_available() -> bool:
         return apps.is_installed("structuretimers")
+
+    @staticmethod
+    def _sovtimer_available() -> bool:
+        return apps.is_installed("sovtimer")
 
     @staticmethod
     def _iter_server_configs():
@@ -240,6 +247,90 @@ class DiscordTimerBoard(commands.Cog):
                     except discord.errors.Forbidden:
                         logger.error("No permission to send to commands channel id=%s", commands_channel_id)
 
+            if not cfg.get("sov_notifications_enabled"):
+                continue
+            sov_alliance_ids = cfg.get("sov_alliance_ids") or []
+            sov_campaigns = self._query_sov_campaigns(sov_alliance_ids)
+            sov_active_pks = {c.campaign_id for c in sov_campaigns}
+            self._notified_sov_warning.setdefault(commands_channel_id, set())
+            self._notified_sov_start.setdefault(commands_channel_id, set())
+            self._notified_sov_warning[commands_channel_id] &= sov_active_pks
+            self._notified_sov_start[commands_channel_id] &= sov_active_pks
+            sov_warned = self._notified_sov_warning[commands_channel_id]
+            sov_started = self._notified_sov_start[commands_channel_id]
+
+            for campaign in sov_campaigns:
+                end_time = campaign.structure.vulnerable_end_time if campaign.structure else None
+                if end_time is None:
+                    continue
+                minutes_until = (end_time - now).total_seconds() / 60
+
+                if (
+                    warning_enabled
+                    and campaign.campaign_id not in sov_warned
+                    and 0 < minutes_until <= warning_minutes
+                ):
+                    msg = (
+                        f":warning: **Sov timer warning ({warning_minutes}m):** "
+                        f"{self._format_sov_line(campaign)}"
+                    )
+                    try:
+                        await channel.send(msg)
+                        sov_warned.add(campaign.campaign_id)
+                    except discord.errors.Forbidden:
+                        logger.error("No permission to send to commands channel id=%s", commands_channel_id)
+
+                if (
+                    start_enabled
+                    and campaign.campaign_id not in sov_started
+                    and minutes_until <= 0
+                ):
+                    msg = (
+                        f":alarm_clock: **Sov timer ending now:** "
+                        f"{self._format_sov_line(campaign)}"
+                    )
+                    try:
+                        await channel.send(msg)
+                        sov_started.add(campaign.campaign_id)
+                    except discord.errors.Forbidden:
+                        logger.error("No permission to send to commands channel id=%s", commands_channel_id)
+
+    def _query_sov_campaigns(self, alliance_ids: list[int]):
+        if not self._sovtimer_available() or not alliance_ids:
+            return []
+        try:
+            Campaign = apps.get_model("sovtimer", "Campaign")
+        except LookupError:
+            return []
+        cutoff = timezone.now() - dt.timedelta(
+            minutes=app_settings.DISCORDTIMERBOARD_PAST_GRACE_MINUTES
+        )
+        return list(
+            Campaign.objects.select_related(
+                "structure__alliance",
+                "structure__solar_system",
+            ).filter(
+                structure__alliance__alliance_id__in=alliance_ids,
+                structure__vulnerable_end_time__gte=cutoff,
+            ).order_by("structure__vulnerable_end_time")
+        )
+
+    @staticmethod
+    def _format_sov_line(campaign) -> str:
+        structure = campaign.structure
+        try:
+            system = structure.solar_system.name
+        except AttributeError:
+            system = "Unknown"
+        try:
+            alliance = structure.alliance.name
+        except AttributeError:
+            alliance = "Unknown"
+        end_time = structure.vulnerable_end_time
+        date_str = timezone.localtime(end_time).strftime("%Y-%m-%d %H:%M:%S") if end_time else "?"
+        event_label = campaign.get_event_type_display() if hasattr(campaign, "get_event_type_display") else campaign.event_type
+        return f"🛡 {date_str} {system} [{alliance}] {event_label} ({campaign.campaign_id})"
+
     def _query_timer_state(self):
         Timer = apps.get_model("structuretimers", "Timer")
         cutoff = timezone.now() - dt.timedelta(
@@ -272,7 +363,7 @@ class DiscordTimerBoard(commands.Cog):
             if channel is None:
                 logger.warning("Timerboard channel not found for id=%s", channel_id)
                 continue
-            await self._update_timerboard_channel(channel, recreate=recreate)
+            await self._update_timerboard_channel(channel, cfg=cfg, recreate=recreate)
         self._last_timer_state = current_state
 
     def _query_timers(self):
@@ -331,9 +422,14 @@ class DiscordTimerBoard(commands.Cog):
     # Safety cap on how many bot messages we track in a channel.
     _HISTORY_BOT_MSG_LIMIT = 200
 
-    async def _update_timerboard_channel(self, channel, recreate: bool = False):
+    async def _update_timerboard_channel(self, channel, cfg: dict = None, recreate: bool = False):
         timers = self._query_timers()
         lines = [self._format_line(t) for t in timers]
+
+        if cfg and cfg.get("sov_notifications_enabled"):
+            sov_alliance_ids = cfg.get("sov_alliance_ids") or []
+            sov_campaigns = self._query_sov_campaigns(sov_alliance_ids)
+            lines += [self._format_sov_line(c) for c in sov_campaigns]
 
         eve_now = timezone.now().astimezone(dt.timezone.utc)
         header = f"Current Eve Time (UTC): {eve_now.strftime('%Y-%m-%d %H:%M')}"

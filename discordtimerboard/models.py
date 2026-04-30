@@ -15,6 +15,10 @@ class DiscordTimerboardConfig(models.Model):
         help_text="Channel where !add/!rm/!refresh commands are accepted."
     )
     enabled = models.BooleanField(default=True)
+    sov_notifications_enabled = models.BooleanField(
+        default=False,
+        help_text="Include sovereignty hub timers from aa-sov-timer on this timerboard.",
+    )
     warning_notifications_enabled = models.BooleanField(
         default=True,
         help_text="Post a warning message to the commands channel before a timer fires.",
@@ -37,6 +41,30 @@ class DiscordTimerboardConfig(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.timerboard_channel_id}/{self.commands_channel_id})"
+
+
+class SovAllianceFilter(models.Model):
+    """Alliance IDs whose sov timers should appear on the timerboard for a given config."""
+
+    config = models.ForeignKey(
+        DiscordTimerboardConfig,
+        on_delete=models.CASCADE,
+        related_name="sov_alliance_filters",
+    )
+    alliance_id = models.PositiveBigIntegerField(help_text="EVE alliance ID to include.")
+    alliance_name = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Label only — not used for filtering.",
+    )
+
+    class Meta:
+        verbose_name = "Sov Alliance Filter"
+        verbose_name_plural = "Sov Alliance Filters"
+        unique_together = ("config", "alliance_id")
+
+    def __str__(self):
+        return f"{self.alliance_name or self.alliance_id}"
 
 
 class ArchivedTimer(models.Model):
