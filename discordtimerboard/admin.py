@@ -2,28 +2,41 @@ from django import forms
 from django.contrib import admin
 from django.apps import apps
 
-from .models import ArchivedTimer, DiscordTimerboardConfig
+from .models import ArchivedTimer, DiscordTimerboardConfig, SovAllianceFilter
 
 
-class DiscordTimerboardConfigForm(forms.ModelForm):
+def _alliance_queryset():
+    try:
+        Alliance = apps.get_model("sovtimer", "Alliance")
+        return Alliance.objects.order_by("name")
+    except LookupError:
+        return None
+
+
+class SovAllianceFilterForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        try:
-            Alliance = apps.get_model("sovtimer", "Alliance")
-            qs = Alliance.objects.order_by("name")
-            self.fields["sov_alliances"].queryset = qs
-            self.fields["sov_alliances"].label_from_instance = lambda obj: obj.name
-        except LookupError:
-            pass
+        qs = _alliance_queryset()
+        if qs is not None:
+            self.fields["alliance"].queryset = qs
+            self.fields["alliance"].label_from_instance = lambda obj: obj.name
 
     class Meta:
-        model = DiscordTimerboardConfig
-        fields = "__all__"
+        model = SovAllianceFilter
+        fields = ("alliance",)
+
+
+class SovAllianceFilterInline(admin.TabularInline):
+    model = SovAllianceFilter
+    form = SovAllianceFilterForm
+    extra = 1
+    verbose_name = "Sov Alliance"
+    verbose_name_plural = "Sov Alliances"
 
 
 @admin.register(DiscordTimerboardConfig)
 class DiscordTimerboardConfigAdmin(admin.ModelAdmin):
-    form = DiscordTimerboardConfigForm
+    inlines = [SovAllianceFilterInline]
     list_display = (
         "name",
         "discord_server_id",
@@ -43,7 +56,6 @@ class DiscordTimerboardConfigAdmin(admin.ModelAdmin):
         "timerboard_channel_id",
         "commands_channel_id",
     )
-    filter_horizontal = ("sov_alliances",)
 
 
 @admin.register(ArchivedTimer)
