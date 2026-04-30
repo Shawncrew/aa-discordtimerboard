@@ -260,7 +260,8 @@ class DiscordTimerBoard(commands.Cog):
             sov_started = self._notified_sov_start[commands_channel_id]
 
             for campaign in sov_campaigns:
-                end_time = campaign.structure.vulnerable_end_time if campaign.structure else None
+                structure = campaign.structure
+                end_time = (structure.vulnerable_end_time if structure else None) or campaign.start_time
                 if end_time is None:
                     continue
                 minutes_until = (end_time - now).total_seconds() / 60
@@ -305,14 +306,16 @@ class DiscordTimerBoard(commands.Cog):
         cutoff = timezone.now() - dt.timedelta(
             minutes=app_settings.DISCORDTIMERBOARD_PAST_GRACE_MINUTES
         )
+        # vulnerable_end_time is NULL during active campaigns in aa-sov-timer;
+        # fall back to filtering on start_time so active contests are included.
         return list(
             Campaign.objects.select_related(
                 "structure__alliance",
                 "structure__solar_system",
             ).filter(
                 structure__alliance__alliance_id__in=alliance_ids,
-                structure__vulnerable_end_time__gte=cutoff,
-            ).order_by("structure__vulnerable_end_time")
+                start_time__gte=cutoff,
+            ).order_by("start_time")
         )
 
     @staticmethod
@@ -326,10 +329,12 @@ class DiscordTimerBoard(commands.Cog):
             alliance = structure.alliance.name
         except AttributeError:
             alliance = "Unknown"
-        end_time = structure.vulnerable_end_time
+        end_time = structure.vulnerable_end_time or campaign.start_time
         date_str = timezone.localtime(end_time).strftime("%Y-%m-%d %H:%M:%S") if end_time else "?"
         event_label = campaign.get_event_type_display() if hasattr(campaign, "get_event_type_display") else campaign.event_type
-        return f"🛡 {date_str} {system} [{alliance}] {event_label} ({campaign.campaign_id})"
+        status = "active" if structure.vulnerable_end_time is None else ""
+        suffix = " [ACTIVE]" if status else ""
+        return f"🛡 {date_str} {system} [{alliance}] {event_label}{suffix} ({campaign.campaign_id})"
 
     def _query_timer_state(self):
         Timer = apps.get_model("structuretimers", "Timer")
