@@ -46,7 +46,7 @@ def get_server_configs():
         for cfg in qs:
             alliance_ids = list(
                 cfg.sov_alliances.values_list("alliance_id", flat=True)
-            )
+            )  # alliance_id is the PK on sovtimer.Alliance
             configs.append(
                 {
                     "name": cfg.name,

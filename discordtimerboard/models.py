@@ -33,6 +33,7 @@ class DiscordTimerboardConfig(models.Model):
     )
     sov_alliances = models.ManyToManyField(
         "sovtimer.Alliance",
+        through="SovAllianceFilter",
         blank=True,
         related_name="+",
         help_text="Alliances whose sovereignty timers appear on this timerboard.",
@@ -47,6 +48,29 @@ class DiscordTimerboardConfig(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.timerboard_channel_id}/{self.commands_channel_id})"
+
+
+class SovAllianceFilter(models.Model):
+    """Through model for DiscordTimerboardConfig.sov_alliances M2M."""
+
+    config = models.ForeignKey(
+        DiscordTimerboardConfig,
+        on_delete=models.CASCADE,
+        db_constraint=False,
+        related_name="sov_alliance_filters",
+    )
+    alliance = models.ForeignKey(
+        "sovtimer.Alliance",
+        on_delete=models.CASCADE,
+        db_constraint=False,
+        related_name="+",
+    )
+
+    class Meta:
+        unique_together = ("config", "alliance")
+
+    def __str__(self):
+        return str(self.alliance_id)
 
 
 class ArchivedTimer(models.Model):
