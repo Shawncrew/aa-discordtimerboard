@@ -45,6 +45,9 @@ def get_server_configs():
                 "discord_server_id",
                 "timerboard_channel_id",
                 "commands_channel_id",
+                "warning_notifications_enabled",
+                "start_notifications_enabled",
+                "warning_minutes",
             )
         )
         if rows:
@@ -54,6 +57,9 @@ def get_server_configs():
                     "guild_id": row["discord_server_id"],
                     "timerboard": row["timerboard_channel_id"],
                     "commands": row["commands_channel_id"],
+                    "warning_notifications_enabled": row["warning_notifications_enabled"],
+                    "start_notifications_enabled": row["start_notifications_enabled"],
+                    "warning_minutes": row["warning_minutes"],
                 }
                 for row in rows
             ]

@@ -103,6 +103,9 @@ class DiscordTimerBoard(commands.Cog):
         self.bot = bot
         self._last_timer_state = None
         self._last_manual_refresh: dict[int, dt.datetime] = {}
+        # Maps commands_channel_id -> set of timer PKs already notified.
+        self._notified_warning: dict[int, set[int]] = {}
+        self._notified_start: dict[int, set[int]] = {}
         if not self.refresh_boards.is_running():
             self.refresh_boards.start()
 
@@ -141,10 +144,101 @@ class DiscordTimerBoard(commands.Cog):
         if not self._structuretimers_available():
             return
         await self.update_all_timerboards()
+        await self._send_timer_notifications()
 
     @refresh_boards.before_loop
     async def _before_refresh_boards(self):
         await self.bot.wait_until_ready()
+
+    def _query_upcoming_timers(self, lookahead_minutes: int):
+        Timer = apps.get_model("structuretimers", "Timer")
+        now = timezone.now()
+        cutoff_past = now - dt.timedelta(
+            minutes=app_settings.DISCORDTIMERBOARD_PAST_GRACE_MINUTES
+        )
+        cutoff_future = now + dt.timedelta(minutes=lookahead_minutes)
+        return list(
+            Timer.objects.select_related(
+                "eve_solar_system",
+                "structure_type",
+            )
+            .filter(date__isnull=False, date__gte=cutoff_past, date__lte=cutoff_future)
+            .exclude(timer_type="MM")
+        )
+
+    async def _send_timer_notifications(self):
+        configs = list(self._iter_server_configs())
+        if not configs:
+            return
+
+        # Determine the widest lookahead needed across all configs.
+        max_warning_minutes = max(
+            cfg.get("warning_minutes", 60)
+            for cfg in configs
+            if cfg.get("warning_notifications_enabled", True)
+        ) if any(cfg.get("warning_notifications_enabled", True) for cfg in configs) else 0
+
+        timers = self._query_upcoming_timers(max_warning_minutes)
+        now = timezone.now()
+
+        # Prune PKs for timers that have aged out of the query window.
+        active_pks = {t.pk for t in timers}
+        for ch_id in list(self._notified_warning):
+            self._notified_warning[ch_id] &= active_pks
+        for ch_id in list(self._notified_start):
+            self._notified_start[ch_id] &= active_pks
+
+        for cfg in configs:
+            commands_channel_id = cfg.get("commands")
+            if not commands_channel_id:
+                continue
+            warning_enabled = cfg.get("warning_notifications_enabled", True)
+            start_enabled = cfg.get("start_notifications_enabled", True)
+            if not warning_enabled and not start_enabled:
+                continue
+
+            warning_minutes = cfg.get("warning_minutes", 60)
+
+            channel = self.bot.get_channel(commands_channel_id)
+            if channel is None:
+                logger.warning("Commands channel not found for id=%s", commands_channel_id)
+                continue
+
+            warned = self._notified_warning.setdefault(commands_channel_id, set())
+            started = self._notified_start.setdefault(commands_channel_id, set())
+
+            for timer in timers:
+                minutes_until = (timer.date - now).total_seconds() / 60
+
+                if (
+                    warning_enabled
+                    and timer.pk not in warned
+                    and 0 < minutes_until <= warning_minutes
+                ):
+                    msg = (
+                        f":warning: **Timer warning ({warning_minutes}m):** "
+                        f"{self._format_line(timer)}"
+                    )
+                    try:
+                        await channel.send(msg)
+                        warned.add(timer.pk)
+                    except discord.errors.Forbidden:
+                        logger.error("No permission to send to commands channel id=%s", commands_channel_id)
+
+                if (
+                    start_enabled
+                    and timer.pk not in started
+                    and minutes_until <= 0
+                ):
+                    msg = (
+                        f":alarm_clock: **Timer starting now:** "
+                        f"{self._format_line(timer)}"
+                    )
+                    try:
+                        await channel.send(msg)
+                        started.add(timer.pk)
+                    except discord.errors.Forbidden:
+                        logger.error("No permission to send to commands channel id=%s", commands_channel_id)
 
     def _query_timer_state(self):
         Timer = apps.get_model("structuretimers", "Timer")
@@ -461,9 +555,29 @@ class DiscordTimerBoard(commands.Cog):
                 ephemeral=ephemeral,
             )
 
+    def _archive_timer(self, timer, ctx_or_interaction):
+        ArchivedTimer = apps.get_model("discordtimerboard", "ArchivedTimer")
+        author = getattr(ctx_or_interaction, "author", None) or getattr(
+            ctx_or_interaction, "user", None
+        )
+        archived_by = str(author) if author else ""
+        try:
+            ArchivedTimer.objects.create(
+                original_id=timer.pk,
+                timer_date=timer.date,
+                system_name=timer.eve_solar_system.name if timer.eve_solar_system_id else "",
+                structure_type_name=timer.structure_type.name if timer.structure_type_id else "",
+                structure_name=(timer.structure_name or "").strip(),
+                owner_name=(timer.owner_name or "").strip(),
+                timer_type=timer.timer_type or "",
+                archived_by=archived_by,
+            )
+        except Exception as e:
+            logger.warning("Failed to archive timer pk=%s: %s", timer.pk, e)
+
     async def _remove_timer_impl(self, ctx_or_interaction, timer_id: int, ephemeral: bool):
         Timer = apps.get_model("structuretimers", "Timer")
-        timer = Timer.objects.filter(pk=timer_id).first()
+        timer = Timer.objects.select_related("eve_solar_system", "structure_type").filter(pk=timer_id).first()
         if not timer:
             await self._send_response(
                 ctx_or_interaction,
@@ -471,6 +585,7 @@ class DiscordTimerBoard(commands.Cog):
                 ephemeral=ephemeral,
             )
             return
+        self._archive_timer(timer, ctx_or_interaction)
         try:
             timer.delete()
         except Exception as e:
