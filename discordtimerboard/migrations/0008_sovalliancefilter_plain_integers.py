@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
     """
 
     dependencies = [
-        ("discordtimerboard", "0005_replace_sovfilter_with_m2m"),
+        ("discordtimerboard", "0007_alter_sovalliancefilter_id"),
     ]
 
     operations = [
