@@ -39,14 +39,12 @@ def get_server_configs():
     """
     try:
         DiscordTimerboardConfig = apps.get_model("discordtimerboard", "DiscordTimerboardConfig")
-        qs = DiscordTimerboardConfig.objects.filter(enabled=True).prefetch_related(
-            "sov_alliances"
-        )
+        SovAllianceFilter = apps.get_model("discordtimerboard", "SovAllianceFilter")
         configs = []
-        for cfg in qs:
+        for cfg in DiscordTimerboardConfig.objects.filter(enabled=True):
             alliance_ids = list(
-                cfg.sov_alliances.values_list("alliance_id", flat=True)
-            )  # alliance_id is the PK on sovtimer.Alliance
+                SovAllianceFilter.objects.filter(config_id=cfg.pk).values_list("alliance_id", flat=True)
+            )
             configs.append(
                 {
                     "name": cfg.name,

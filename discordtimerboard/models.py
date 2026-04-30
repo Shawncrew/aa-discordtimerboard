@@ -31,13 +31,6 @@ class DiscordTimerboardConfig(models.Model):
         default=60,
         help_text="How many minutes before a timer to post the warning notification.",
     )
-    sov_alliances = models.ManyToManyField(
-        "sovtimer.Alliance",
-        through="SovAllianceFilter",
-        blank=True,
-        related_name="+",
-        help_text="Alliances whose sovereignty timers appear on this timerboard.",
-    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -51,23 +44,13 @@ class DiscordTimerboardConfig(models.Model):
 
 
 class SovAllianceFilter(models.Model):
-    """Through model for DiscordTimerboardConfig.sov_alliances M2M."""
+    """Maps a config to an alliance ID with no FK constraints (MySQL-safe)."""
 
-    config = models.ForeignKey(
-        DiscordTimerboardConfig,
-        on_delete=models.CASCADE,
-        db_constraint=False,
-        related_name="sov_alliance_filters",
-    )
-    alliance = models.ForeignKey(
-        "sovtimer.Alliance",
-        on_delete=models.CASCADE,
-        db_constraint=False,
-        related_name="+",
-    )
+    config_id = models.IntegerField(db_index=True)
+    alliance_id = models.PositiveBigIntegerField()
 
     class Meta:
-        unique_together = ("config", "alliance")
+        unique_together = ("config_id", "alliance_id")
 
     def __str__(self):
         return str(self.alliance_id)
