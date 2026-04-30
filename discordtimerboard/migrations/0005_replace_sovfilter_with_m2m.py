@@ -9,9 +9,6 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.DeleteModel(
-            name="SovAllianceFilter",
-        ),
         migrations.AddField(
             model_name="discordtimerboardconfig",
             name="sov_alliances",
