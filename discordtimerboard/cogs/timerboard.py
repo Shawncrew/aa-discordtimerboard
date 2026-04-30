@@ -558,22 +558,26 @@ class DiscordTimerBoard(commands.Cog):
         strikethrough_minutes = cfg.get("strikethrough_minutes", 5) if cfg else 5
         now = timezone.now()
         timers = self._query_timers(past_minutes=strikethrough_minutes)
-        lines = []
+        # Collect (sort_date, line) so structure and sov entries merge in time order.
+        entries: list[tuple] = []
         for t in timers:
             line = self._format_line(t)
             if t.date and t.date <= now:
                 line = f"~~{line}~~"
-            lines.append(line)
+            entries.append((t.date, line))
 
         if cfg and cfg.get("sov_notifications_enabled"):
             sov_alliance_ids = cfg.get("sov_alliance_ids") or []
             sov_campaigns = self._query_sov_campaigns(sov_alliance_ids)
             for c in sov_campaigns:
                 line = self._format_sov_line(c)
-                end_time = (c.structure.vulnerable_end_time if c.structure else None) or c.start_time
-                if end_time and end_time <= now:
+                sort_date = (c.structure.vulnerable_end_time if c.structure else None) or c.start_time
+                if sort_date and sort_date <= now:
                     line = f"~~{line}~~"
-                lines.append(line)
+                entries.append((sort_date, line))
+
+        entries.sort(key=lambda x: x[0] or timezone.now())
+        lines = [line for _, line in entries]
 
         eve_now = timezone.now().astimezone(dt.timezone.utc)
         header = f"Current Eve Time (UTC): {eve_now.strftime('%Y-%m-%d %H:%M')}"
