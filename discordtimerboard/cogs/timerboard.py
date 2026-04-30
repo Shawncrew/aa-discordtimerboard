@@ -460,7 +460,8 @@ class DiscordTimerBoard(commands.Cog):
         region_part = f" ({region})" if region else ""
         ticker_tag = f"[{ticker}]" if ticker else ""
 
-        return f"{date_str} {system}{region_part} {struct_name} {ticker_tag}[{type_tag}] 🛡️"
+        system_link = f"[{system}](<{DiscordTimerBoard._dotlan_system_url(system)}>)"
+        return f"{date_str} {system_link}{region_part} {struct_name} {ticker_tag}[{type_tag}] 🛡️"
 
     def _query_timer_state(self):
         Timer = apps.get_model("structuretimers", "Timer")
