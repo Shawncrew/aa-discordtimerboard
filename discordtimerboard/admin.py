@@ -1,12 +1,6 @@
 from django.contrib import admin
 
-from .models import ArchivedTimer, DiscordTimerboardConfig, SovAllianceFilter
-
-
-class SovAllianceFilterInline(admin.TabularInline):
-    model = SovAllianceFilter
-    extra = 1
-    fields = ("alliance_id", "alliance_name")
+from .models import ArchivedTimer, DiscordTimerboardConfig
 
 
 @admin.register(DiscordTimerboardConfig)
@@ -30,7 +24,7 @@ class DiscordTimerboardConfigAdmin(admin.ModelAdmin):
         "timerboard_channel_id",
         "commands_channel_id",
     )
-    inlines = [SovAllianceFilterInline]
+    filter_horizontal = ("sov_alliances",)
 
 
 @admin.register(ArchivedTimer)

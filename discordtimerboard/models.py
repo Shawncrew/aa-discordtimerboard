@@ -31,6 +31,12 @@ class DiscordTimerboardConfig(models.Model):
         default=60,
         help_text="How many minutes before a timer to post the warning notification.",
     )
+    sov_alliances = models.ManyToManyField(
+        "sovtimer.Alliance",
+        blank=True,
+        related_name="+",
+        help_text="Alliances whose sovereignty timers appear on this timerboard.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -41,30 +47,6 @@ class DiscordTimerboardConfig(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.timerboard_channel_id}/{self.commands_channel_id})"
-
-
-class SovAllianceFilter(models.Model):
-    """Alliance IDs whose sov timers should appear on the timerboard for a given config."""
-
-    config = models.ForeignKey(
-        DiscordTimerboardConfig,
-        on_delete=models.CASCADE,
-        related_name="sov_alliance_filters",
-    )
-    alliance_id = models.PositiveBigIntegerField(help_text="EVE alliance ID to include.")
-    alliance_name = models.CharField(
-        max_length=255,
-        blank=True,
-        help_text="Label only — not used for filtering.",
-    )
-
-    class Meta:
-        verbose_name = "Sov Alliance Filter"
-        verbose_name_plural = "Sov Alliance Filters"
-        unique_together = ("config", "alliance_id")
-
-    def __str__(self):
-        return f"{self.alliance_name or self.alliance_id}"
 
 
 class ArchivedTimer(models.Model):
