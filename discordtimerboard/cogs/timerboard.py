@@ -20,7 +20,7 @@ from django.utils import timezone
 from eveuniverse.models import EveSolarSystem, EveType
 
 from .. import app_settings
-from ..parsing import ParsedTimerInput, parse_add_input
+from ..parsing import ParsedTimerInput, parse_add_input, parse_bulk_input
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ STRUCTURE_ALIAS_TO_EVE_TYPE_NAME = {
     "ANSIBLEX": "Ansiblex Jump Gate",
     "SKYHOOK": "Orbital Skyhook",
     "SKY": "Orbital Skyhook",
+    "ORBITAL SKYHOOK": "Orbital Skyhook",
     "POCO": "Customs Office",
     "CUSTOMS": "Customs Office",
     "CUSTOMS OFFICE": "Customs Office",
@@ -761,6 +762,67 @@ class DiscordTimerBoard(commands.Cog):
             return
         await self._add_timer_impl(ctx, input_text, ephemeral=True)
 
+    @commands.command(name="bulkadd")
+    async def bulk_add_timer_cmd(self, ctx, *, input_text: str):
+        cfg = await self._guard_command_access(ctx)
+        if not cfg:
+            return
+        if not await self._check_add_perm(ctx):
+            await self._send_response(ctx, "You do not have permission to add timers.")
+            return
+        await self._bulk_add_impl(ctx, input_text, ephemeral=False)
+
+    @commands.slash_command(
+        name="bulkaddtimers",
+        description="Add multiple timers from a bulk timer list (paste multiple lines)",
+    )
+    @option("input_text", description="Paste the full bulk timer list (multiple lines supported)")
+    async def slash_bulk_add_timer_cmd(self, ctx, input_text: str):
+        cfg = await self._guard_command_access(ctx)
+        if not cfg:
+            return
+        if not await self._check_add_perm(ctx):
+            await self._send_response(ctx, "You do not have permission to add timers.", ephemeral=True)
+            return
+        await self._bulk_add_impl(ctx, input_text, ephemeral=True)
+
+
+    async def _bulk_add_impl(self, ctx_or_interaction, input_text: str, ephemeral: bool):
+        if not self._structuretimers_available():
+            await self._send_response(ctx_or_interaction, "`aa-structuretimers` is required but not installed.", ephemeral=ephemeral)
+            return
+
+        parsed_lines = parse_bulk_input(input_text)
+        if not parsed_lines:
+            await self._send_response(ctx_or_interaction, "No timer lines found in input.", ephemeral=ephemeral)
+            return
+
+        added = skipped = failed = 0
+        parse_errors = []
+
+        for line_num, raw_line, parsed in parsed_lines:
+            if parsed is None:
+                parse_errors.append(f"Line {line_num}: could not parse")
+                failed += 1
+                continue
+            timer, created, error = self._create_timer_from_parsed(ctx_or_interaction, parsed)
+            if error:
+                parse_errors.append(f"Line {line_num}: {error}")
+                failed += 1
+            elif created:
+                added += 1
+            else:
+                skipped += 1
+
+        await self.update_all_timerboards()
+
+        lines = [f"**Bulk add complete:** {added} added, {skipped} already exist, {failed} failed."]
+        if parse_errors:
+            lines.append("**Errors:**")
+            lines += parse_errors[:10]
+            if len(parse_errors) > 10:
+                lines.append(f"…and {len(parse_errors) - 10} more errors.")
+        await self._send_response(ctx_or_interaction, "\n".join(lines), ephemeral=ephemeral)
 
     async def _add_timer_impl(self, ctx_or_interaction, input_text: str, ephemeral: bool):
         if not self._structuretimers_available():

@@ -48,6 +48,58 @@ def _parse_structure_line(structure_line: str) -> Optional[Tuple[str, str]]:
     return None
 
 
+# Matches: 2026-04-16 07:01 [Pure Blind] Y2-6EA - Y2-6EA Planet 1 [Orbital Skyhook][P3WN/NC][Final] (5:02) [#Auth]
+_BULK_LINE_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})"   # datetime (no seconds)
+    r"\s+\[[^\]]+\]"                         # [region] — ignored
+    r"\s+(\S+)"                              # system
+    r"\s+-\s+"                               # separator
+    r"(.+?)"                                 # structure name (lazy)
+    r"\s+(\[[^\]]+\])"                       # [struct_type]
+    r"(\[[^\]]+\])"                          # [owner]
+    r"(\[[^\]]+\])"                          # [timer_type]
+    r"\s+\([^)]+\)"                          # (remaining) — ignored
+    r"(?:\s+\[[^\]]+\])?"                    # optional trailing [#tag] — ignored
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_bulk_line(line: str) -> Optional[ParsedTimerInput]:
+    """Parse one line of the bulk timer format."""
+    m = _BULK_LINE_RE.match(line.strip())
+    if not m:
+        return None
+    dt_str, system, structure_name, struct_bracket, owner_bracket, type_bracket = (
+        m.group(1), m.group(2), m.group(3),
+        m.group(4), m.group(5), m.group(6),
+    )
+    try:
+        when = dt.datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
+    struct_tag = struct_bracket.strip("[]")
+    owner_tag = owner_bracket.strip("[]")
+    timer_tag = type_bracket.strip("[]")
+    return ParsedTimerInput(
+        timer_time=_make_aware_utc(when),
+        system=system.strip(),
+        structure_name=structure_name.strip(),
+        tags=[owner_tag, struct_tag, timer_tag],
+    )
+
+
+def parse_bulk_input(text: str) -> list:
+    """Parse multiple lines, returning list of (line_num, raw_line, ParsedTimerInput|None)."""
+    results = []
+    for i, line in enumerate(text.splitlines(), start=1):
+        line = line.strip()
+        if not line:
+            continue
+        results.append((i, line, parse_bulk_line(line)))
+    return results
+
+
 def parse_add_input(input_text: str, now_utc: Optional[dt.datetime] = None) -> Optional[ParsedTimerInput]:
     text = input_text.strip()
 
