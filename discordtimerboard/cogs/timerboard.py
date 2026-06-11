@@ -582,19 +582,19 @@ class DiscordTimerBoard(commands.Cog):
 
         eve_now = timezone.now().astimezone(dt.timezone.utc)
         header = f"Current Eve Time (UTC): {eve_now.strftime('%Y-%m-%d %H:%M')}"
-        content_lines = [header, "", "", ""] + (lines if lines else ["No active timers."])
+        content_lines = [header, "", ""] + (lines if lines else ["No active timers."])
 
         payloads = []
         current = ""
         for line in content_lines:
-            candidate = f"{current}\n{line}".strip("\n") if current else line
+            candidate = f"{current}\n{line}" if current else line
             if len(candidate) > self._DISCORD_MSG_MAX_LEN:
-                payloads.append(current)
+                payloads.append(current.strip("\n"))
                 current = line
             else:
                 current = candidate
         if current:
-            payloads.append(current)
+            payloads.append(current.strip("\n"))
 
         existing = []
         try:
