@@ -517,19 +517,10 @@ class DiscordTimerBoard(commands.Cog):
     def _format_tags(self, timer) -> str:
         tags = []
 
-        owner_appended = False
-        if timer.eve_alliance_id:
-            try:
-                ticker = self._get_alliance_ticker(timer.eve_alliance.alliance_id)
-                if ticker:
-                    tags.append(f"[{ticker}]")
-                    owner_appended = True
-            except Exception:
-                pass
-        if not owner_appended:
-            owner = (timer.owner_name or "").strip().strip("[]")
-            if owner:
-                tags.append(f"[{owner}]")
+        owner = (timer.owner_name or "").strip()
+        if owner:
+            owner = owner.strip("[]")
+            tags.append(f"[{owner}]")
 
         structure_name = timer.structure_type.name if timer.structure_type_id else ""
         struct_tag = STRUCTURE_DISPLAY_TAG.get(structure_name)
