@@ -188,3 +188,36 @@ class TestSplitForDiscord(unittest.TestCase):
         self.assertGreater(len(chunks), 1)
         self.assertTrue(chunks[0].endswith("```"))
         self.assertTrue(chunks[1].startswith("```"))
+
+
+class TestSlashCommandDescriptions(unittest.TestCase):
+    """Discord rejects command/option descriptions longer than 100 characters.
+
+    An over-long description raises ValidationError at class-definition time, which
+    fails the whole cog load, so this is checked here rather than found in production.
+    """
+
+    DISCORD_DESCRIPTION_LIMIT = 100
+
+    def test_descriptions_within_discord_limit(self):
+        checked = 0
+        for attr_name, obj in vars(DiscordTimerBoard).items():
+            description = getattr(obj, "description", None)
+            if isinstance(description, str):
+                checked += 1
+                self.assertLessEqual(
+                    len(description),
+                    self.DISCORD_DESCRIPTION_LIMIT,
+                    f"{attr_name} description is {len(description)} chars",
+                )
+            for opt in getattr(obj, "options", None) or []:
+                opt_description = getattr(opt, "description", None)
+                if isinstance(opt_description, str):
+                    checked += 1
+                    self.assertLessEqual(
+                        len(opt_description),
+                        self.DISCORD_DESCRIPTION_LIMIT,
+                        f"{attr_name} option {getattr(opt, 'name', '?')} description "
+                        f"is {len(opt_description)} chars",
+                    )
+        self.assertGreater(checked, 0, "no descriptions found to check")

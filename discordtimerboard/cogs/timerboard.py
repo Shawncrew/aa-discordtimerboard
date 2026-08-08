@@ -968,9 +968,10 @@ class DiscordTimerBoard(commands.Cog):
     @commands.slash_command(name="addtimer", description="Add a structure timer")
     @option(
         "input_text",
+        # Discord caps command and option descriptions at 100 characters.
         description=(
-            "Timerboard copy-paste, 'SYSTEM - NAME Reinforced until ...', or "
-            "'Merc Den SYS Planet I 2 30'. See /timerboardhelp"
+            "Timerboard paste, 'SYS - NAME Reinforced until ...', "
+            "or 'Merc Den SYS Planet I 2 30'"
         ),
     )
     async def slash_add_timer_cmd(self, ctx, input_text: str):
