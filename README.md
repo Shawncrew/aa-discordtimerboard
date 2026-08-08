@@ -145,7 +145,11 @@ Then follow the same `INSTALLED_APPS`, admin config, and service restart steps a
 
 ## Command Formats
 
-Supported `!add` formats:
+In Discord, run `!timerhelp` (or `/timerboardhelp`) for this reference in-channel. Topics:
+`add`, `tags`, `bulk`, `commands`, `all`. The tag lists in that help output are generated from
+the alias tables in the cog, so they never drift from what the parser actually accepts.
+
+All times are Eve time (UTC). Supported `!add` formats:
 
 1) Direct format:
 
@@ -163,20 +167,43 @@ distance line
 Reinforced until YYYY.MM.DD HH:MM:SS [TAGS]
 ```
 
+`Anchoring until` is accepted in place of `Reinforced until` in both 2) and 3).
+
 4) Mercenary Den relative format:
 
 `!add Merc Den SYSTEM Planet I 2 30 [NC]`
+
+Hours and minutes are counted from now, and both are required even when zero. The owner tag is
+optional (default `[NC]`); structure and timer type are forced to Mercenary Den / Final.
+
+5) Timerboard copy-paste — a line copied out of the timerboard channel, with or without the
+region, the trailing timer id, and Discord's link markup around the system name.
 
 Tags should usually be:
 
 `[OWNER][STRUCTURE][TYPE]` e.g. `[NC][FORT][ARMOR]`
 
+The first tag is the owner, the second the structure type, and the timer type is read from the
+last tag that matches a known type. See `!timerhelp tags` for the accepted structure and timer
+type tags.
+
 Additional parsing helpers are included for lines like:
 - `Customs Office (DT-TCD IX) ...`
 - `Orbital Skyhook (MQ-NPY I) ...`
+
+### Bulk add
+
+`!bulkadd` / `/bulkaddtimers` takes multiple lines in the bulk timer list format, which puts
+the structure tag first:
+
+```
+2026-04-16 07:01 [Pure Blind] Y2-6EA - Y2-6EA Planet 1 [Orbital Skyhook][P3WN/NC][Final] (5:02) [#Auth]
+```
 
 ## Slash Commands
 
 - `/addtimer`
 - `/removetimer`
 - `/refreshtimerboard`
+- `/bulkaddtimers`
+- `/timerboardhelp`

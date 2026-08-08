@@ -98,6 +98,190 @@ MODEL_TIMER_TO_TAG = {
 
 _REFRESH_COOLDOWN_SECONDS = 30
 
+_DISCORD_MESSAGE_LIMIT = 2000
+
+
+def _grouped_structure_aliases() -> str:
+    """One line per structure type listing every tag alias that resolves to it."""
+    grouped: dict[str, list[str]] = {}
+    for alias, type_name in STRUCTURE_ALIAS_TO_EVE_TYPE_NAME.items():
+        grouped.setdefault(type_name, []).append(alias)
+    lines = []
+    for type_name in sorted(grouped):
+        aliases = sorted(grouped[type_name], key=lambda a: (len(a), a))
+        lines.append(f"- {type_name}: " + ", ".join(f"`{a}`" for a in aliases))
+    return "\n".join(lines)
+
+
+def _grouped_timer_type_tags() -> str:
+    """One line per timer type listing every tag alias that resolves to it."""
+    grouped: dict[str, list[str]] = {}
+    for tag, code in TIMER_TYPE_TAG_TO_MODEL.items():
+        grouped.setdefault(code, []).append(tag)
+    lines = []
+    for code in sorted(grouped, key=lambda c: MODEL_TIMER_TO_TAG.get(c, c)):
+        aliases = sorted(grouped[code], key=lambda a: (len(a), a))
+        lines.append(f"- {MODEL_TIMER_TO_TAG.get(code, code).title()}: " + ", ".join(f"`{a}`" for a in aliases))
+    return "\n".join(lines)
+
+
+def build_help_sections() -> dict:
+    """Help topics for the add/bulkadd commands, keyed by topic name."""
+    return {
+        "add": (
+            "**Adding a timer** — `!add <timer text>` or `/addtimer`\n"
+            "All times are **Eve time (UTC)**. Four input formats are accepted:\n"
+            "\n"
+            "__1. Timerboard copy-paste__ — copy a line straight out of the timerboard channel:\n"
+            "```\n"
+            "!add 2026-04-23 19:15:59 CL6-ZG (Pure Blind) Microplastic [INIT][ASTRA][FINAL] (5292)\n"
+            "```\n"
+            "The region and the trailing timer id are optional, and Discord's link markup around "
+            "the system name is fine.\n"
+            "\n"
+            "__2. Direct__ — you already know the exact Eve time:\n"
+            "```\n"
+            "!add 2026-04-23 19:15:59 CL6-ZG - Microplastic [INIT][ASTRA][FINAL]\n"
+            "```\n"
+            "\n"
+            "__3. Reinforced / in-game paste__ — paste the structure info from the client. Single line:\n"
+            "```\n"
+            "!add CL6-ZG - Microplastic Reinforced until 2026.04.23 19:15:59 [INIT][ASTRA][ARMOR]\n"
+            "```\n"
+            "or multiline (the middle lines are ignored):\n"
+            "```\n"
+            "!add CL6-ZG - Microplastic\n"
+            "12.3 km\n"
+            "Reinforced until 2026.04.23 19:15:59 [INIT][ASTRA][ARMOR]\n"
+            "```\n"
+            "`Anchoring until` works the same way. `Customs Office (DT-TCD IX)` and "
+            "`Orbital Skyhook (MQ-NPY I)` lines are also understood in place of `SYSTEM - STRUCTURE`.\n"
+            "\n"
+            "__4. Mercenary Den (relative time)__ — `Merc Den <system> <planet> <hours> <minutes> [OWNER]`:\n"
+            "```\n"
+            "!add Merc Den MQ-NPY Planet I 2 30 [NC]\n"
+            "```\n"
+            "That is 2h30m from now. **Both** hours and minutes are required, even when zero "
+            "(`... Planet I 0 45`). The owner tag is optional and defaults to `[NC]`; the structure "
+            "and timer type are always set to Mercenary Den / Final, and `Mercenary Den` is prefixed "
+            "onto the planet automatically — don't type it yourself.\n"
+            "\n"
+            "See `!timerhelp tags` for the tag list, `!timerhelp bulk` for adding many at once."
+        ),
+        "tags": (
+            "**Tags** — `[OWNER][STRUCTURE][TYPE]`, e.g. `[NC][FORT][ARMOR]`\n"
+            "Spaces between the brackets are fine. Order matters: the **first** tag is the owner, "
+            "the **second** is the structure type, and the timer type is taken from the **last** tag "
+            "that matches a known type.\n"
+            "\n"
+            "The owner tag is free text (usually an alliance ticker) and is stored as-is.\n"
+            "\n"
+            "__Structure type tags__\n"
+            f"{_grouped_structure_aliases()}\n"
+            "If the structure tag is missing or unknown, the structure name is searched for one of "
+            "these words instead.\n"
+            "\n"
+            "__Timer type tags__\n"
+            f"{_grouped_timer_type_tags()}\n"
+            "With no recognised type tag the timer is created with no type set."
+        ),
+        "bulk": (
+            "**Bulk add** — `!bulkadd <lines>` or `/bulkaddtimers`\n"
+            "Paste multiple lines at once; each line must be in the bulk timer list format:\n"
+            "```\n"
+            "2026-04-16 07:01 [Pure Blind] Y2-6EA - Y2-6EA Planet 1 [Orbital Skyhook][P3WN/NC][Final] (5:02) [#Auth]\n"
+            "```\n"
+            "That is: date and time **without seconds**, `[region]`, `system - structure`, then "
+            "`[structure][owner][type]`, then the `(time remaining)`. The trailing `[#channel]` tag "
+            "is optional. Note this format's tag order differs from `!add` — structure comes first.\n"
+            "\n"
+            "Lines that already have a matching timer are skipped, and a per-line error report is "
+            "returned for anything that failed."
+        ),
+        "commands": (
+            "**Commands**\n"
+            "- `!add <timer text>` / `/addtimer` — add one timer (`!timerhelp add`)\n"
+            "- `!bulkadd <lines>` / `/bulkaddtimers` — add many timers (`!timerhelp bulk`)\n"
+            "- `!rm <timer id>` / `/removetimer` — remove a timer by the id shown at the end of its line\n"
+            "- `!refresh` / `/refreshtimerboard` — rebuild the timerboard now "
+            f"({_REFRESH_COOLDOWN_SECONDS}s cooldown)\n"
+            "- `!timerhelp [topic]` / `/timerboardhelp` — this help\n"
+            "\n"
+            "Adding and removing timers requires the `structuretimers` create permission, and the "
+            "commands only work in a configured commands channel."
+        ),
+    }
+
+
+HELP_TOPICS = ("add", "tags", "bulk", "commands")
+
+
+def build_help_text(topic: str = "add") -> str:
+    """Render one help topic, or every topic when topic is 'all'."""
+    sections = build_help_sections()
+    key = (topic or "add").strip().lower()
+    aliases = {
+        "": "add",
+        "formats": "add",
+        "format": "add",
+        "addtimer": "add",
+        "tag": "tags",
+        "types": "tags",
+        "structures": "tags",
+        "bulkadd": "bulk",
+        "command": "commands",
+    }
+    key = aliases.get(key, key)
+    if key == "all":
+        return "\n\n".join(sections[name] for name in HELP_TOPICS)
+    if key not in sections:
+        return (
+            f"Unknown help topic `{topic}`. Available topics: "
+            + ", ".join(f"`{name}`" for name in HELP_TOPICS)
+            + ", `all`."
+        )
+    return sections[key]
+
+
+def split_for_discord(text: str, limit: int = _DISCORD_MESSAGE_LIMIT) -> list:
+    """Split text into Discord-sized chunks on line boundaries, keeping code fences balanced.
+
+    A chunk that ends inside a ``` block is closed off and the next chunk reopens it, so
+    a split never leaves a code block dangling.
+    """
+    chunks = []
+    current = ""
+    in_fence = False
+
+    def flush(open_fence: bool):
+        nonlocal current
+        if not current:
+            return
+        chunks.append(current + "\n```" if open_fence else current)
+        current = "```" if open_fence else ""
+
+    # Reserve room for the fence markers we may have to add on either side of a split.
+    budget = limit - 8
+    lines = []
+    for line in text.split("\n"):
+        while len(line) > budget:
+            lines.append(line[:budget])
+            line = line[budget:]
+        lines.append(line)
+
+    for line in lines:
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) > budget:
+            flush(in_fence)
+            current = f"{current}\n{line}" if current else line
+        else:
+            current = candidate
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+    if current:
+        chunks.append(current)
+    return chunks
+
 
 class DiscordTimerBoard(commands.Cog):
     _alliance_ticker_cache: dict[int, str] = {}
@@ -670,6 +854,11 @@ class DiscordTimerBoard(commands.Cog):
             return
         await ctx_or_interaction.send(message)
 
+    async def _send_long_response(self, ctx_or_interaction, message: str, ephemeral: bool = False):
+        """Send a message that may exceed Discord's per-message length limit."""
+        for chunk in split_for_discord(message):
+            await self._send_response(ctx_or_interaction, chunk, ephemeral=ephemeral)
+
     async def _guard_command_access(self, ctx_or_interaction):
         channel = getattr(ctx_or_interaction, "channel", None)
         channel_id = getattr(channel, "id", None)
@@ -689,6 +878,30 @@ class DiscordTimerBoard(commands.Cog):
 
     def _mark_refresh(self, channel_id: int):
         self._last_manual_refresh[channel_id] = timezone.now()
+
+    @commands.command(name="timerhelp", aliases=["timerboardhelp", "addhelp"])
+    async def timer_help_cmd(self, ctx, topic: str = "add"):
+        cfg = await self._guard_command_access(ctx)
+        if not cfg:
+            return
+        await self._send_long_response(ctx, build_help_text(topic))
+
+    @commands.slash_command(
+        name="timerboardhelp",
+        description="How to add timers: input formats, tags and commands",
+    )
+    @option(
+        "topic",
+        description="add | tags | bulk | commands | all",
+        required=False,
+        default="add",
+        choices=list(HELP_TOPICS) + ["all"],
+    )
+    async def slash_timer_help_cmd(self, ctx, topic: str = "add"):
+        cfg = await self._guard_command_access(ctx)
+        if not cfg:
+            return
+        await self._send_long_response(ctx, build_help_text(topic), ephemeral=True)
 
     @commands.command(name="refresh")
     async def refresh_cmd(self, ctx):
@@ -756,7 +969,8 @@ class DiscordTimerBoard(commands.Cog):
     @option(
         "input_text",
         description=(
-            "Paste timer text. Supports timerbot formats: direct, reinforced/multiline, Merc Den."
+            "Timerboard copy-paste, 'SYSTEM - NAME Reinforced until ...', or "
+            "'Merc Den SYS Planet I 2 30'. See /timerboardhelp"
         ),
     )
     async def slash_add_timer_cmd(self, ctx, input_text: str):
@@ -828,7 +1042,8 @@ class DiscordTimerBoard(commands.Cog):
             lines += parse_errors[:10]
             if len(parse_errors) > 10:
                 lines.append(f"…and {len(parse_errors) - 10} more errors.")
-        await self._send_response(ctx_or_interaction, "\n".join(lines), ephemeral=ephemeral)
+            lines.append("Run `!timerhelp bulk` for the expected line format.")
+        await self._send_long_response(ctx_or_interaction, "\n".join(lines), ephemeral=ephemeral)
 
     async def _add_timer_impl(self, ctx_or_interaction, input_text: str, ephemeral: bool):
         if not self._structuretimers_available():
@@ -843,7 +1058,13 @@ class DiscordTimerBoard(commands.Cog):
         if not parsed:
             await self._send_response(
                 ctx_or_interaction,
-                "Invalid format. Use direct, reinforced/multiline, or Merc Den formats.",
+                "Could not parse that timer. Accepted formats:\n"
+                "- `2026-04-23 19:15:59 CL6-ZG - Microplastic [INIT][ASTRA][FINAL]`\n"
+                "- `CL6-ZG - Microplastic Reinforced until 2026.04.23 19:15:59 [INIT][ASTRA][ARMOR]`\n"
+                "  (or the same pasted from the client over several lines)\n"
+                "- `Merc Den MQ-NPY Planet I 2 30 [NC]` (hours and minutes from now)\n"
+                "- a line copied straight out of the timerboard channel\n"
+                "Run `!timerhelp` for the full reference, or `!timerhelp tags` for the tag list.",
                 ephemeral=ephemeral,
             )
             return
