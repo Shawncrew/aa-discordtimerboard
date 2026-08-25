@@ -160,3 +160,68 @@ class TestParseAddInput(unittest.TestCase):
         self.assertEqual(parsed.structure_name, "Mercenary Den Planet I")
         self.assertEqual(parsed.tags, ["NC", "MERCENARY DEN", "FINAL"])
         self.assertEqual(parsed.timer_time, now_utc + dt.timedelta(hours=2, minutes=30))
+
+    def test_parse_ansiblex_multiline_reinforced(self):
+        """Ansiblex gate pasted from in-game: the system must not be split on its hyphen.
+
+        The gate name has no ' - ' between system and structure, so the dash rule used to
+        backtrack into the hyphen of '6RCQ-V' and report 'Unknown solar system: 6RCQ'.
+        """
+        raw = "\n".join(
+            [
+                "6RCQ-V \u00bb 9-4RP2 - Edgy Ansiblex Name",
+                "0 m",
+                "Reinforced until 2026.08.25 19:53:31 [BDNUT][ANSIBLEX][HULL]",
+            ]
+        )
+        parsed = parse_add_input(raw)
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.system, "6RCQ-V")
+        self.assertEqual(parsed.structure_name, "6RCQ-V \u00bb 9-4RP2 - Edgy Ansiblex Name")
+        self.assertEqual(parsed.tags, ["BDNUT", "ANSIBLEX", "HULL"])
+        self.assertEqual(
+            parsed.timer_time,
+            timezone.make_aware(dt.datetime(2026, 8, 25, 19, 53, 31), dt.timezone.utc),
+        )
+
+    def test_parse_ansiblex_single_line_reinforced(self):
+        parsed = parse_add_input(
+            "6RCQ-V \u00bb 9-4RP2 - Edgy Ansiblex Name "
+            "Reinforced until 2026.08.25 19:53:31 [BDNUT][ANSIBLEX][HULL]"
+        )
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.system, "6RCQ-V")
+        self.assertEqual(parsed.tags, ["BDNUT", "ANSIBLEX", "HULL"])
+
+    def test_parse_ansiblex_ascii_arrow(self):
+        """Some people type >> rather than the in-game » character."""
+        raw = "\n".join(
+            [
+                "6RCQ-V >> 9-4RP2 - Edgy Ansiblex Name",
+                "Reinforced until 2026.08.25 19:53:31 [BDNUT][ANSIBLEX][HULL]",
+            ]
+        )
+        parsed = parse_add_input(raw)
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.system, "6RCQ-V")
+
+    def test_parse_ansiblex_from_timerboard_copy_paste(self):
+        """The board renders the gate name in full; pasting that line back must round-trip."""
+        parsed = parse_add_input(
+            "2026-08-25 19:53:31 [6RCQ-V](<https://evemaps.dotlan.net/system/6RCQ-V>) "
+            "(Tenal) 6RCQ-V \u00bb 9-4RP2 - Edgy Ansiblex Name [BDNUT][ANSIBLEX][HULL] (51)"
+        )
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.system, "6RCQ-V")
+        self.assertEqual(parsed.structure_name, "6RCQ-V \u00bb 9-4RP2 - Edgy Ansiblex Name")
+        self.assertEqual(parsed.tags, ["BDNUT", "ANSIBLEX", "HULL"])
+
+    def test_dash_format_still_wins_for_hyphenated_systems(self):
+        """The Ansiblex rule must not disturb the ordinary 'SYSTEM - STRUCTURE' form."""
+        parsed = parse_add_input(
+            "M-OEE8 - Some Structure - With Dashes "
+            "Reinforced until 2026.08.25 19:53:31 [NC][FORT][ARMOR]"
+        )
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.system, "M-OEE8")
+        self.assertEqual(parsed.structure_name, "Some Structure - With Dashes")

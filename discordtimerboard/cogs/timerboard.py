@@ -39,15 +39,20 @@ STRUCTURE_ALIAS_TO_EVE_TYPE_NAME = {
     "ATHANOR": "Athanor",
     "RAITARU": "Raitaru",
     "SOTIYO": "Sotiyo",
-    "ANSI": "Ansiblex Jump Gate",
-    "ANSIBLEX": "Ansiblex Jump Gate",
+    "ANSI": "Ansiblex Jump Bridge",
+    "ANSIBLEX": "Ansiblex Jump Bridge",
+    "JB": "Ansiblex Jump Bridge",
+    "JUMPBRIDGE": "Ansiblex Jump Bridge",
+    "ANSIBLEX JUMP BRIDGE": "Ansiblex Jump Bridge",
     "SKYHOOK": "Orbital Skyhook",
     "SKY": "Orbital Skyhook",
     "ORBITAL SKYHOOK": "Orbital Skyhook",
     "POCO": "Customs Office",
     "CUSTOMS": "Customs Office",
     "CUSTOMS OFFICE": "Customs Office",
-    "IHUB": "Infrastructure Hub",
+    "IHUB": "Sovereignty Hub",
+    "SOVHUB": "Sovereignty Hub",
+    "SOVEREIGNTY HUB": "Sovereignty Hub",
     "MERCENARY DEN": "Mercenary Den",
     "MERC DEN": "Mercenary Den",
     "MERC": "Mercenary Den",
@@ -63,10 +68,10 @@ STRUCTURE_DISPLAY_TAG = {
     "Athanor": "ATHANOR",
     "Raitaru": "RAITARU",
     "Sotiyo": "SOTIYO",
-    "Ansiblex Jump Gate": "ANSI",
+    "Ansiblex Jump Bridge": "ANSI",
     "Orbital Skyhook": "Skyhook",
     "Customs Office": "POCO",
-    "Infrastructure Hub": "IHUB",
+    "Sovereignty Hub": "IHUB",
     "Mercenary Den": "MERCENARY DEN",
     "Metenox Moon Drill": "METENOX",
 }
@@ -154,8 +159,9 @@ def build_help_sections() -> dict:
             "12.3 km\n"
             "Reinforced until 2026.04.23 19:15:59 [INIT][ASTRA][ARMOR]\n"
             "```\n"
-            "`Anchoring until` works the same way. `Customs Office (DT-TCD IX)` and "
-            "`Orbital Skyhook (MQ-NPY I)` lines are also understood in place of `SYSTEM - STRUCTURE`.\n"
+            "`Anchoring until` works the same way. In place of `SYSTEM - STRUCTURE`, "
+            "`Customs Office (DT-TCD IX)`, `Orbital Skyhook (MQ-NPY I)` and Ansiblex gate "
+            "names like `6RCQ-V \u00bb 9-4RP2 - Edgy Ansiblex Name` are also understood.\n"
             "\n"
             "__4. Mercenary Den (relative time)__ — `Merc Den <system> <planet> <hours> <minutes> [OWNER]`:\n"
             "```\n"
@@ -295,12 +301,38 @@ class DiscordTimerBoard(commands.Cog):
         self._notified_start: dict[int, set[int]] = {}
         self._notified_sov_warning: dict[int, set[int]] = {}
         self._notified_sov_start: dict[int, set[int]] = {}
+        self._warn_on_unresolvable_structure_types()
         if not self.refresh_boards.is_running():
             self.refresh_boards.start()
 
     def cog_unload(self):
         if self.refresh_boards.is_running():
             self.refresh_boards.cancel()
+
+    @staticmethod
+    def _warn_on_unresolvable_structure_types():
+        """Log any alias target that matches no EveType.
+
+        CCP renames structures (Ansiblex Jump Gate -> Ansiblex Jump Bridge, Infrastructure
+        Hub -> Sovereignty Hub), and a stale name here fails silently until someone tries to
+        add that timer and gets "Could not resolve structure type". One query at startup
+        turns that into a log line instead.
+        """
+        try:
+            wanted = set(STRUCTURE_ALIAS_TO_EVE_TYPE_NAME.values())
+            found = {
+                name.lower()
+                for name in EveType.objects.filter(name__in=wanted).values_list("name", flat=True)
+            }
+            missing = sorted(n for n in wanted if n.lower() not in found)
+            if missing:
+                logger.warning(
+                    "Structure types not found in EveType (renamed by CCP, or not loaded "
+                    "by eveuniverse): %s. Timers tagged with these will fail to resolve.",
+                    ", ".join(missing),
+                )
+        except Exception as e:
+            logger.debug("Structure type check skipped: %s", e)
 
     @staticmethod
     def _structuretimers_available() -> bool:

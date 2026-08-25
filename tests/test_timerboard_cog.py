@@ -8,6 +8,7 @@ from django.utils import timezone
 from discordtimerboard.cogs.timerboard import (
     HELP_TOPICS,
     STRUCTURE_ALIAS_TO_EVE_TYPE_NAME,
+    STRUCTURE_DISPLAY_TAG,
     TIMER_TYPE_TAG_TO_MODEL,
     DiscordTimerBoard,
     build_help_text,
@@ -221,3 +222,31 @@ class TestSlashCommandDescriptions(unittest.TestCase):
                         f"is {len(opt_description)} chars",
                     )
         self.assertGreater(checked, 0, "no descriptions found to check")
+
+
+class TestStructureTypeTables(unittest.TestCase):
+    def test_every_alias_target_has_a_display_tag(self):
+        """The two tables are keyed by EveType.name and must stay in step.
+
+        A structure renamed in one table but not the other resolves on add and then
+        renders on the board as a truncated fallback tag.
+        """
+        for type_name in set(STRUCTURE_ALIAS_TO_EVE_TYPE_NAME.values()):
+            self.assertIn(
+                type_name,
+                STRUCTURE_DISPLAY_TAG,
+                f"{type_name!r} has no entry in STRUCTURE_DISPLAY_TAG",
+            )
+
+    def test_display_tags_are_all_reachable_as_aliases(self):
+        for type_name in STRUCTURE_DISPLAY_TAG:
+            self.assertIn(
+                type_name,
+                set(STRUCTURE_ALIAS_TO_EVE_TYPE_NAME.values()),
+                f"{type_name!r} can be displayed but no tag resolves to it",
+            )
+
+    def test_current_eve_type_names(self):
+        """Names CCP has renamed; the old ones match no EveType and break resolution."""
+        self.assertEqual(STRUCTURE_ALIAS_TO_EVE_TYPE_NAME["ANSIBLEX"], "Ansiblex Jump Bridge")
+        self.assertEqual(STRUCTURE_ALIAS_TO_EVE_TYPE_NAME["IHUB"], "Sovereignty Hub")

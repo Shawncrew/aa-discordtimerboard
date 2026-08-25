@@ -21,6 +21,15 @@ def _make_aware_utc(value: dt.datetime) -> dt.datetime:
 def _parse_structure_line(structure_line: str) -> Optional[Tuple[str, str]]:
     line = structure_line.strip()
 
+    # Ansiblex gate: "6RCQ-V » 9-4RP2 - Edgy Ansiblex Name".
+    # Must be tried before the dash rule: the gate name has no " - " separating the
+    # system from the structure, so the dash rule backtracks into the hyphen of the
+    # system name itself and yields "6RCQ" instead of "6RCQ-V". The whole line is the
+    # gate's in-game name, so keep it as the structure name.
+    ansiblex_match = re.match(r"^([A-Za-z0-9-]+)\s*(?:»|>>)\s*(.+)$", line)
+    if ansiblex_match:
+        return ansiblex_match.group(1).strip(), line
+
     # SYSTEM - STRUCTURE
     dash_match = re.match(r"^([A-Za-z0-9-]+)\s*-\s*(.+)$", line)
     if dash_match:
@@ -186,7 +195,14 @@ def parse_add_input(input_text: str, now_utc: Optional[dt.datetime] = None) -> O
         when = dt.datetime.strptime(time_match.group(1), "%Y.%m.%d %H:%M:%S")
         tags = re.findall(r"\[([^\]]+)\]", reinforced_line)
 
-        source_line = lines[0]
+        # On a single-line paste the structure and the "Reinforced until ..." text share
+        # one line; drop the timer half so it does not end up in the structure name.
+        source_line = re.split(
+            r"\s+(?:Reinforced|Anchoring)\s+until\s+",
+            lines[0],
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0].strip()
         parsed = _parse_structure_line(source_line)
         if not parsed:
             return None
