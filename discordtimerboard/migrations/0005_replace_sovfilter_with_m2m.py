@@ -6,7 +6,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("discordtimerboard", "0004_sov_support"),
-        ("sovtimer", "0001_initial"),
+        ("sovtimer", "0001_initialize"),
     ]
 
     operations = [
